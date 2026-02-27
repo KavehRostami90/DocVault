@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DocVault.Application\DocVault.Application.csproj" />
+    <ProjectReference Include="..\..\src\DocVault.Domain\DocVault.Domain.csproj" />
+    <ProjectReference Include="..\..\src\DocVault.Infrastructure\DocVault.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

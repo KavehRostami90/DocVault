@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+	  <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DocVault.Application\DocVault.Application.csproj" />
+    <ProjectReference Include="..\DocVault.Infrastructure\DocVault.Infrastructure.csproj" />
+    <ProjectReference Include="..\DocVault.Domain\DocVault.Domain.csproj" />
+  </ItemGroup>
+</Project>
