@@ -27,11 +27,7 @@ try
 
   var app = builder.Build();
 
-  // CorrelationId must be first so all downstream logs include it
-  app.UseMiddleware<CorrelationIdMiddleware>();
-  app.UseExceptionHandler();
-
-  // Serilog request logging replaces hand-rolled RequestLoggingMiddleware
+  // 1. Serilog outermost — wraps every request so all logs carry request context
   app.UseSerilogRequestLogging(options =>
   {
     options.GetLevel = (httpContext, _, ex) => ex is not null
@@ -50,6 +46,12 @@ try
         diagnosticContext.Set("CorrelationId", correlationId?.ToString() ?? string.Empty);
     };
   });
+
+  // 2. CorrelationId — pushes property into Serilog LogContext for all downstream logs
+  app.UseMiddleware<CorrelationIdMiddleware>();
+
+  // 3. ExceptionHandler — translates unhandled exceptions to problem+json responses
+  app.UseExceptionHandler();
 
   if (app.Environment.IsDevelopment())
   {

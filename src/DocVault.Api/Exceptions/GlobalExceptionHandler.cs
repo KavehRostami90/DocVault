@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using DocVault.Api.Errors;
 using DocVault.Api.Middleware;
+using DocVault.Api.Validation;
 using DocVault.Domain.Primitives;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
@@ -14,10 +15,12 @@ namespace DocVault.Api.Exceptions;
 public sealed partial class GlobalExceptionHandler : IExceptionHandler
 {
   private readonly ILogger<GlobalExceptionHandler> _logger;
+  private readonly IProblemDetailsService _problemDetailsService;
 
-  public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger)
+  public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IProblemDetailsService problemDetailsService)
   {
     _logger = logger;
+    _problemDetailsService = problemDetailsService;
   }
 
   public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
@@ -72,12 +75,14 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
   private static ErrorDescriptor MapException(Exception exception)
     => exception switch
     {
-      ValidationException validation => MapValidationException(validation),
-      DomainException domain => new ErrorDescriptor(StatusCodes.Status400BadRequest, "Domain rule violated", ErrorCodes.DomainRuleViolation, domain.Message),
-      KeyNotFoundException notFound => new ErrorDescriptor(StatusCodes.Status404NotFound, "Resource not found", ErrorCodes.NotFound, string.IsNullOrWhiteSpace(notFound.Message) ? "The requested resource was not found." : notFound.Message),
-      UnauthorizedAccessException unauthorized => new ErrorDescriptor(StatusCodes.Status403Forbidden, "Forbidden", ErrorCodes.Forbidden, string.IsNullOrWhiteSpace(unauthorized.Message) ? "Access denied." : unauthorized.Message),
-      DbUpdateException dbUpdate => new ErrorDescriptor(StatusCodes.Status503ServiceUnavailable, "Database error", ErrorCodes.DatabaseFailure, dbUpdate.InnerException?.Message ?? dbUpdate.Message),
-      _ => new ErrorDescriptor(StatusCodes.Status500InternalServerError, "Unexpected error", ErrorCodes.Unhandled, "An unexpected error occurred.")
+      JsonBindingException jsonBinding      => MapJsonBindingException(jsonBinding),
+      BadHttpRequestException badRequest    => new ErrorDescriptor(badRequest.StatusCode, "Bad request", ErrorCodes.BadRequest.MALFORMED_BODY, badRequest.Message),
+      ValidationException validation        => MapValidationException(validation),
+      DomainException domain                => new ErrorDescriptor(StatusCodes.Status400BadRequest, "Domain rule violated", ErrorCodes.BadRequest.DOMAIN_VIOLATION, domain.Message),
+      KeyNotFoundException notFound         => new ErrorDescriptor(StatusCodes.Status404NotFound, "Resource not found", ErrorCodes.NotFound.RESOURCE_MISSING, string.IsNullOrWhiteSpace(notFound.Message) ? "The requested resource was not found." : notFound.Message),
+      UnauthorizedAccessException           => new ErrorDescriptor(StatusCodes.Status403Forbidden, "Forbidden", ErrorCodes.Forbidden.ACCESS_DENIED, "Access denied."),
+      DbUpdateException dbUpdate            => new ErrorDescriptor(StatusCodes.Status503ServiceUnavailable, "Database error", ErrorCodes.ServerError.DATABASE_FAILURE, dbUpdate.InnerException?.Message ?? dbUpdate.Message),
+      _                                     => new ErrorDescriptor(StatusCodes.Status500InternalServerError, "Unexpected error", ErrorCodes.ServerError.UNHANDLED, "An unexpected error occurred.")
     };
 
   private static ErrorDescriptor MapValidationException(ValidationException exception)
@@ -89,11 +94,20 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
     return new ErrorDescriptor(
       StatusCodes.Status400BadRequest,
       "Validation failed",
-      ErrorCodes.ValidationFailed,
+      ErrorCodes.BadRequest.VALIDATION_FAILED,
       "One or more validation errors occurred.",
       new Dictionary<string, object> { ["errors"] = errors }
     );
   }
+
+  private static ErrorDescriptor MapJsonBindingException(JsonBindingException exception)
+    => new(
+      StatusCodes.Status400BadRequest,
+      "Validation failed",
+      ErrorCodes.BadRequest.VALIDATION_FAILED,
+      "One or more JSON binding errors occurred.",
+      new Dictionary<string, object> { ["errors"] = exception.Errors }
+    );
 
   private sealed record ErrorDescriptor(
     int StatusCode,
