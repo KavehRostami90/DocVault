@@ -1,21 +1,25 @@
-[ ] Verify that the copilot-instructions.md file in the .github directory is created.
+# GitHub Copilot Instructions
 
-[ ] Clarify Project Requirements
+## Files and folders Copilot should ignore
 
-[ ] Scaffold the Project
+Do NOT read, suggest edits to, or include content from:
 
-[ ] Customize the Project
+- `secrets/` — contains local credentials and API keys
+- `**/.env`, `**/.env.*` — environment variable files with secrets
+- `**/appsettings.*.Local.json` — machine-local configuration overrides
+- `**/Logs/` — Serilog rolling log files (`.log`, `.clef`)
+- `**/bin/`, `**/obj/` — build output
+- `**/TestResults/`, `**/coverage/` — test and coverage output
+- `docker-compose.override.yml` — local Docker overrides
 
-[ ] Install Required Extensions
+## Project conventions
 
-[ ] Compile the Project
-
-[ ] Create and Run Task
-
-[ ] Launch the Project
-
-[ ] Ensure Documentation is Complete
-
-Work through each checklist item systematically.
-Keep communication concise and focused.
-Follow development best practices.
+- **Framework**: .NET 10 Minimal API, C# 13
+- **Architecture**: Clean Architecture — Domain / Application / Infrastructure / Api layers
+- **Logging**: Serilog with two-stage init (`CreateBootstrapLogger` → `UseSerilog`); use `[LoggerMessage]` source-generated methods in `partial` classes
+- **Error handling**: `GlobalExceptionHandler : IExceptionHandler`; all exceptions map to `application/problem+json` via `IProblemDetailsService`
+- **Validation**: FluentValidation via `ValidationFilter`; JSON type errors via `JsonValidationBinder` + `JsonBindingException`
+- **Error codes**: nested static classes in `ErrorCodes` (`ErrorCodes.BadRequest.VALIDATION_FAILED`, etc.)
+- **Package versions**: managed centrally in `Directory.Packages.props` — never add `Version=` to `<PackageReference>` in `.csproj` files
+- **Constants**: `UPPER_SNAKE_CASE`
+- **No inline TODO comments** — raise issues instead

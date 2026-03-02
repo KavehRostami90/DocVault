@@ -1,11 +1,32 @@
+# Build output
 bin/
 obj/
+
+# IDE
 .vs/
 .vscode/
 *.user
 *.suo
 *.DS_Store
 *.swp
-*.log
+
+# Test results & coverage
 TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# Serilog rolling logs
+**/Logs/
+*.log
+*.clef
+
+# Secrets & local environment
 .env
+.env.*
+secrets/
+appsettings.*.Local.json
+
+# Docker local overrides
+docker-compose.override.yml
