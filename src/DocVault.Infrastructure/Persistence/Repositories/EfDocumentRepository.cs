@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Filtering;
 using DocVault.Application.Common.Paging;
@@ -82,9 +83,12 @@ public class EfDocumentRepository : IDocumentRepository
       return new Page<SearchResultItem>([], page, size, 0);
     }
 
-    // Build an OR predicate: document matches if any term appears in title or text.
+    // Build an OR expression tree EF can translate for both the InMemory and
+    // relational providers.  Each term produces:
+    //   d => d.Title.Contains(term) || d.Text.Contains(term)
+    // and the per-term predicates are OR-ed together.
     IQueryable<Document> q = _db.Documents.Include(d => d.Tags);
-    q = q.Where(d => terms.Any(t => d.Title.Contains(t) || d.Text.Contains(t)));
+    q = q.Where(BuildTermsFilter(terms));
 
     var total = await q.LongCountAsync(cancellationToken);
     var docs  = await q.OrderByDescending(d => d.UpdatedAt ?? d.CreatedAt)
@@ -94,6 +98,28 @@ public class EfDocumentRepository : IDocumentRepository
 
     var items = docs.Select(d => new SearchResultItem(d, ComputeScore(d, terms))).ToList();
     return new Page<SearchResultItem>(items, page, size, total);
+  }
+
+  // Builds: d => (d.Title.Contains(t1) || d.Text.Contains(t1))
+  //           || (d.Title.Contains(t2) || d.Text.Contains(t2)) ...
+  private static Expression<Func<Document, bool>> BuildTermsFilter(string[] terms)
+  {
+    var param        = Expression.Parameter(typeof(Document), "d");
+    var titleProp    = Expression.Property(param, nameof(Document.Title));
+    var textProp     = Expression.Property(param, nameof(Document.Text));
+    var containsMeth = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+
+    Expression? body = null;
+    foreach (var term in terms)
+    {
+      var literal    = Expression.Constant(term);
+      var titleHit   = Expression.Call(titleProp, containsMeth, literal);
+      var textHit    = Expression.Call(textProp,  containsMeth, literal);
+      var termClause = Expression.OrElse(titleHit, textHit);
+      body = body is null ? termClause : Expression.OrElse(body, termClause);
+    }
+
+    return Expression.Lambda<Func<Document, bool>>(body!, param);
   }
 
   // Lightweight keyword relevance: title hits worth 1.0 each, body hits worth 0.3 each, normalised to [0, 1].
