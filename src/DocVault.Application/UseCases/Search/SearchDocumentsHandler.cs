@@ -1,13 +1,21 @@
+using DocVault.Application.Abstractions.Persistence;
+using DocVault.Application.Common.Paging;
 using DocVault.Application.Common.Results;
-using DocVault.Domain.Documents;
 
 namespace DocVault.Application.UseCases.Search;
 
 public sealed class SearchDocumentsHandler
 {
-  public Task<Result<IReadOnlyCollection<Document>>> HandleAsync(SearchDocumentsQuery query, CancellationToken cancellationToken = default)
+  private readonly IDocumentRepository _documents;
+
+  public SearchDocumentsHandler(IDocumentRepository documents)
   {
-    IReadOnlyCollection<Document> empty = Array.Empty<Document>();
-    return Task.FromResult(Result<IReadOnlyCollection<Document>>.Success(empty));
+    _documents = documents;
+  }
+
+  public async Task<Result<Page<SearchResultItem>>> HandleAsync(SearchDocumentsQuery query, CancellationToken cancellationToken = default)
+  {
+    var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, cancellationToken);
+    return Result<Page<SearchResultItem>>.Success(page);
   }
 }
