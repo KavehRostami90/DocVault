@@ -1,4 +1,5 @@
 using FluentValidation;
+using Microsoft.Extensions.Logging;
 
 namespace DocVault.Api.Validation;
 
@@ -21,6 +22,8 @@ public static class ValidationFilter
               var errors = result.Errors
                 .GroupBy(e => e.PropertyName)
                 .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
+              var logger = invocationContext.HttpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Validation");
+              logger?.LogWarning("Validation failed for {Path}: {Errors}", invocationContext.HttpContext.Request.Path, errors);
               return Results.ValidationProblem(errors, statusCode: StatusCodes.Status400BadRequest);
             }
           }
