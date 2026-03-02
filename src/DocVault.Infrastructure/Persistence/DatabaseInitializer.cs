@@ -27,11 +27,14 @@ public class DatabaseInitializer : IHostedService
 
     try
     {
-      var hasMigrations = dbContext.Database.GetMigrations().Any();
-
-      if (dbContext.Database.IsRelational() && hasMigrations)
+      if (dbContext.Database.IsRelational())
       {
-        await dbContext.Database.MigrateAsync(cancellationToken);
+        // GetMigrations() requires a relational provider — guard it here.
+        var hasMigrations = dbContext.Database.GetMigrations().Any();
+        if (hasMigrations)
+          await dbContext.Database.MigrateAsync(cancellationToken);
+        else
+          await dbContext.Database.EnsureCreatedAsync(cancellationToken);
       }
       else
       {

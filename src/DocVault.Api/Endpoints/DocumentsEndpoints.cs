@@ -34,12 +34,22 @@ public static class DocumentsEndpoints
 
     group.MapPost("/", async (DocumentCreateRequest request, ImportDocumentHandler handler, CancellationToken ct) =>
     {
-      await using var stream = new MemoryStream();
-      var result = await handler.HandleAsync(new ImportDocumentCommand(request.FileName, stream), ct);
+      var file = request.File!;
+      await using var stream = file.OpenReadStream();
+
+      var result = await handler.HandleAsync(new ImportDocumentCommand(
+        request.Title,
+        file.FileName,
+        file.ContentType,
+        file.Length,
+        request.Tags,
+        stream), ct);
+
       return result.IsSuccess
         ? Results.Created($"/documents/{result.Value!.Value}", new { id = result.Value!.Value })
-        : Results.BadRequest(new { error = result.Error });
+        : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status422UnprocessableEntity);
     })
+    .DisableAntiforgery()
     .AddEndpointFilterFactory(ValidationFilter.Create<DocumentCreateRequest>());
 
     group.MapPut("/{id:guid}/tags", async (Guid id, DocumentUpdateRequest request, UpdateTagsHandler handler, CancellationToken ct) =>

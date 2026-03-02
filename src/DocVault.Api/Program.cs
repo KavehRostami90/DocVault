@@ -1,6 +1,7 @@
 using DocVault.Api.Composition;
 using DocVault.Api.Endpoints;
 using DocVault.Api.Middleware;
+using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
 
@@ -55,9 +56,12 @@ try
 
   if (app.Environment.IsDevelopment())
   {
-    app.MapOpenApi();
+    // OpenAPI document: /openapi/v1.json
+    // Scalar UI:        /scalar/v1
+    
   }
-
+  app.MapOpenApi();
+  app.MapScalarApiReference();
   app.MapDocumentsEndpoints();
   app.MapSearchEndpoints();
   app.MapTagsEndpoints();
@@ -74,3 +78,6 @@ finally
 {
   Log.CloseAndFlush();
 }
+
+// Exposes the implicit top-level Program class to the integration test project
+public partial class Program { }

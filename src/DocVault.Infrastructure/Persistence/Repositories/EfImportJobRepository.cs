@@ -22,6 +22,11 @@ public class EfImportJobRepository : IImportJobRepository
   public Task<ImportJob?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     => _db.ImportJobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
 
+  public async Task<IReadOnlyList<ImportJob>> GetPendingAsync(CancellationToken cancellationToken = default)
+    => await _db.ImportJobs
+      .Where(j => j.Status == ImportStatus.Pending || j.Status == ImportStatus.InProgress)
+      .ToListAsync(cancellationToken);
+
   public async Task UpdateAsync(ImportJob job, CancellationToken cancellationToken = default)
   {
     _db.ImportJobs.Update(job);

@@ -1,5 +1,10 @@
-using DocVault.Application.Common.Results;
-
 namespace DocVault.Application.UseCases.Documents.ImportDocument;
 
-public sealed record ImportDocumentCommand(string FileName, Stream Content);
+/// <summary>All metadata is sourced from the uploaded file; nothing is trusted from the client except Title and Tags.</summary>
+public sealed record ImportDocumentCommand(
+  string Title,
+  string FileName,
+  string ContentType,
+  long Size,
+  IReadOnlyCollection<string> Tags,
+  Stream Content);

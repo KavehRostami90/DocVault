@@ -34,9 +34,14 @@ public static class DependencyInjection
     services.AddSingleton<IndexStage>();
     services.AddSingleton(_ => DefaultHooks.Empty);
     services.AddSingleton<IngestionPipeline>();
-    services.AddSingleton(typeof(IWorkQueue<(string Path, string ContentType)>), typeof(InMemoryWorkQueue<(string Path, string ContentType)>));
-    services.AddSingleton<IndexingWorker>();
+
+    // Channel-backed queue: thread-safe, async-blocking, no extra package.
+    services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
+
+    // Register as a hosted service so the runtime starts/stops it automatically.
+    services.AddHostedService<IndexingWorker>();
 
     return services;
   }
 }
+

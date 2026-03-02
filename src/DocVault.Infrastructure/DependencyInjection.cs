@@ -3,7 +3,6 @@ using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
-using DocVault.Application.Background.Queue;
 using DocVault.Infrastructure.Embeddings;
 using DocVault.Infrastructure.Messaging;
 using DocVault.Infrastructure.Messaging.Handlers;
@@ -42,8 +41,6 @@ public static class DependencyInjection
     services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
     services.AddSingleton<ITextExtractor, PlainTextExtractor>();
     services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
-
-    services.AddSingleton(typeof(IWorkQueue<(string Path, string ContentType)>), typeof(InMemoryWorkQueue<(string Path, string ContentType)>));
 
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
     services.AddSingleton<DocumentImportedHandler>();
