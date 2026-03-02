@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Filtering;
 using DocVault.Application.Common.Paging;
+using DocVault.Application.UseCases.Search;
 using DocVault.Domain.Documents;
 using Microsoft.EntityFrameworkCore;
 
@@ -71,5 +72,36 @@ public class EfDocumentRepository : IDocumentRepository
   {
     _db.Documents.Update(document);
     await _db.SaveChangesAsync(cancellationToken);
+  }
+
+  public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, CancellationToken cancellationToken = default)
+  {
+    var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (terms.Length == 0)
+    {
+      return new Page<SearchResultItem>([], page, size, 0);
+    }
+
+    // Build an OR predicate: document matches if any term appears in title or text.
+    IQueryable<Document> q = _db.Documents.Include(d => d.Tags);
+    q = q.Where(d => terms.Any(t => d.Title.Contains(t) || d.Text.Contains(t)));
+
+    var total = await q.LongCountAsync(cancellationToken);
+    var docs  = await q.OrderByDescending(d => d.UpdatedAt ?? d.CreatedAt)
+                       .Skip((page - 1) * size)
+                       .Take(size)
+                       .ToListAsync(cancellationToken);
+
+    var items = docs.Select(d => new SearchResultItem(d, ComputeScore(d, terms))).ToList();
+    return new Page<SearchResultItem>(items, page, size, total);
+  }
+
+  // Lightweight keyword relevance: title hits worth 1.0 each, body hits worth 0.3 each, normalised to [0, 1].
+  private static double ComputeScore(Document doc, string[] terms)
+  {
+    var titleHits = terms.Count(t => doc.Title.Contains(t, StringComparison.OrdinalIgnoreCase));
+    var textHits  = terms.Count(t => doc.Text.Contains(t, StringComparison.OrdinalIgnoreCase));
+    var maxPossible = terms.Length * 1.3;
+    return Math.Round((titleHits * 1.0 + textHits * 0.3) / maxPossible, 4);
   }
 }

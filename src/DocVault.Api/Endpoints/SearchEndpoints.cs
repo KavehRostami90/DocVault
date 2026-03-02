@@ -2,7 +2,6 @@ using DocVault.Api.Contracts.Common;
 using DocVault.Api.Contracts.Search;
 using DocVault.Api.Validation;
 using DocVault.Application.UseCases.Search;
-using DocVault.Domain.Documents;
 
 namespace DocVault.Api.Endpoints;
 
@@ -20,14 +19,15 @@ public static class SearchEndpoints
         return Results.Ok(new PageResponse<SearchResultItemResponse>(Array.Empty<SearchResultItemResponse>(), request.Page, request.Size, 0));
       }
 
-      var items = result.Value.Select(ToResponse).ToList();
-      return Results.Ok(new PageResponse<SearchResultItemResponse>(items, request.Page, request.Size, items.Count));
+      var page  = result.Value;
+      var items = page.Items.Select(ToResponse).ToList();
+      return Results.Ok(new PageResponse<SearchResultItemResponse>(items, request.Page, request.Size, page.TotalCount));
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<SearchRequest>());
 
     return routes;
   }
 
-  private static SearchResultItemResponse ToResponse(Document doc)
-    => new(doc.Id.Value, doc.Title, doc.Text[..Math.Min(doc.Text.Length, 120)], 0);
+  private static SearchResultItemResponse ToResponse(SearchResultItem item)
+    => new(item.Document.Id.Value, item.Document.Title, item.Document.Text[..Math.Min(item.Document.Text.Length, 120)], item.Score);
 }
