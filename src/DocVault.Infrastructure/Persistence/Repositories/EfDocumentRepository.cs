@@ -4,6 +4,7 @@ using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Filtering;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Search;
+using DocVault.Domain.Common;
 using DocVault.Domain.Documents;
 using Microsoft.EntityFrameworkCore;
 
@@ -55,11 +56,12 @@ public class EfDocumentRepository : IDocumentRepository
 
     var sortRegistry = new Dictionary<string, Expression<Func<Document, object>>>
     {
-      ["title"] = d => d.Title,
-      ["filename"] = d => d.FileName,
-      ["status"] = d => d.Status,
-      ["created"] = d => d.CreatedAt,
-      ["updated"] = d => d.UpdatedAt ?? d.CreatedAt
+      [ValidationConstants.Paging.SortFields.TITLE]      = d => d.Title,
+      [ValidationConstants.Paging.SortFields.FILE_NAME]  = d => d.FileName,
+      [ValidationConstants.Paging.SortFields.SIZE]       = d => d.Size,
+      [ValidationConstants.Paging.SortFields.STATUS]     = d => d.Status,
+      [ValidationConstants.Paging.SortFields.CREATED_AT] = d => d.CreatedAt,
+      [ValidationConstants.Paging.SortFields.UPDATED_AT] = d => d.UpdatedAt ?? d.CreatedAt,
     };
 
     query = SortBuilder.Apply(query, request.Sort, request.Desc, sortRegistry, d => d.CreatedAt);

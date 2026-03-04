@@ -12,14 +12,12 @@ public sealed class LocalFileStorage : IFileStorage
     Directory.CreateDirectory(_root);
   }
 
-  public async Task DeleteAsync(string path, CancellationToken cancellationToken = default)
+  public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
   {
     var fullPath = Path.Combine(_root, path);
     if (File.Exists(fullPath))
-    {
       File.Delete(fullPath);
-    }
-    await Task.CompletedTask;
+    return Task.CompletedTask;
   }
 
   public Task<Stream> ReadAsync(string path, CancellationToken cancellationToken = default)

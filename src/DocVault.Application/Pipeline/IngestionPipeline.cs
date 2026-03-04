@@ -3,7 +3,7 @@ using DocVault.Application.Pipeline.Hooks;
 
 namespace DocVault.Application.Pipeline;
 
-public sealed class IngestionPipeline
+public sealed class IngestionPipeline : IIngestionPipeline
 {
   private readonly FileReadStage _fileRead;
   private readonly TextExtractStage _textExtract;

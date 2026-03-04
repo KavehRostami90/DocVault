@@ -11,7 +11,7 @@ public static class SortBuilder
     IReadOnlyDictionary<string, Expression<Func<T, object>>> registry,
     Expression<Func<T, TDefault>> defaultSort)
   {
-    if (!string.IsNullOrWhiteSpace(sort) && registry.TryGetValue(sort, out var selector))
+    if (!string.IsNullOrWhiteSpace(sort) && registry.TryGetValue(sort.ToLowerInvariant(), out var selector))
     {
       return desc ? query.OrderByDescending(selector) : query.OrderBy(selector);
     }

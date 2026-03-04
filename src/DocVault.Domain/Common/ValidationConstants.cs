@@ -42,12 +42,32 @@ public static class ValidationConstants
         public const int DEFAULT_PAGE = 1;
         public const int DEFAULT_SIZE = 20;
         public const int MAX_FILTER_LENGTH = 100;
-        
+
+        /// <summary>
+        /// Canonical lowercase sort field identifiers shared by the validator and the repository.
+        /// The sort value received from the client is lower-cased before matching, so "Title",
+        /// "TITLE" and "title" all resolve correctly.
+        /// </summary>
+        public static class SortFields
+        {
+            public const string TITLE      = "title";
+            public const string FILE_NAME  = "filename";
+            public const string SIZE       = "size";
+            public const string STATUS     = "status";
+            public const string CREATED_AT = "createdat";
+            public const string UPDATED_AT = "updatedat";
+        }
+
         public static readonly string[] VALID_DOCUMENT_SORT_FIELDS =
         [
-            "title", "fileName", "size", "status", "createdAt", "updatedAt"
+            SortFields.TITLE,
+            SortFields.FILE_NAME,
+            SortFields.SIZE,
+            SortFields.STATUS,
+            SortFields.CREATED_AT,
+            SortFields.UPDATED_AT,
         ];
-        
+
         public static readonly string[] VALID_DOCUMENT_STATUSES =
         [
             "pending", "imported", "indexed", "failed"
