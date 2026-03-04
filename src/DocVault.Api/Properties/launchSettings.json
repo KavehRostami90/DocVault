@@ -3,7 +3,7 @@
     "DocVault.Api": {
       "commandName": "Project",
       "launchBrowser": true,
-      "launchUrl": "Scalar/v1",
+      "launchUrl": "swagger",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       },
