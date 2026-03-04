@@ -1,4 +1,5 @@
 using DocVault.Application.Abstractions.Storage;
+using DocVault.Application.Background.Queue;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Storage;
 using Microsoft.AspNetCore.Hosting;
@@ -30,21 +31,38 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
 
     builder.ConfigureServices(services =>
     {
-      // Remove both the cached options AND the IDbContextOptionsConfiguration
-      // callbacks that call UseNpgsql — this prevents the dual-provider conflict
-      // when InMemory is added afterwards.
+      // Remove all DbContext-related registrations added by AddDbContextFactory/AddDbContext
+      // so the Npgsql-backed factory and options cannot survive into the InMemory test run.
       var toRemove = services
         .Where(sd =>
           sd.ServiceType == typeof(DbContextOptions<DocVaultDbContext>) ||
+          sd.ServiceType == typeof(DbContext) ||
           (sd.ServiceType.IsGenericType &&
-           sd.ServiceType.GetGenericTypeDefinition() == typeof(IDbContextOptionsConfiguration<>)))
+           sd.ServiceType.GetGenericTypeDefinition() == typeof(IDbContextOptionsConfiguration<>)) ||
+          (sd.ServiceType.IsGenericType &&
+           sd.ServiceType.GetGenericTypeDefinition() == typeof(IDbContextFactory<>)))
         .ToList();
 
       foreach (var sd in toRemove)
         services.Remove(sd);
 
-      services.AddDbContext<DocVaultDbContext>(opts =>
-        opts.UseInMemoryDatabase(_dbName));
+      // Remove the scoped DocVaultDbContext lambda registered via AddScoped(sp => factory.Create…).
+      services.RemoveAll<DocVaultDbContext>();
+
+      // Remove the PostgresWorkQueue singleton so the durable queue doesn't try to hit Postgres.
+      services.RemoveAll<IWorkQueue<IndexingWorkItem>>();
+
+      // Register InMemory factory (gives both IDbContextFactory<T> and scoped DbContext).
+      services.AddDbContextFactory<DocVaultDbContext>(
+        opts => opts.UseInMemoryDatabase(_dbName),
+        ServiceLifetime.Scoped);
+
+      // Re-register scoped DbContext consumed by repositories and DatabaseInitializer.
+      services.AddScoped(sp =>
+        sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
+
+      // Restore the lightweight in-process queue; channel-backed, no Postgres needed.
+      services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
 
       // Replace file storage with an isolated temp directory.
       services.RemoveAll<IFileStorage>();

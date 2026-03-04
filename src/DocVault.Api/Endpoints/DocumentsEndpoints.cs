@@ -17,12 +17,21 @@ public static class DocumentsEndpoints
   {
     var group = routes.MapGroup("/documents");
 
-    group.MapGet("/", async (int page, int size, string? sort, bool desc, string? title, string? status, string? tag, ListDocumentsHandler handler, CancellationToken ct) =>
+    group.MapGet("/", async ([AsParameters] ListDocumentsRequest request, ListDocumentsHandler handler, CancellationToken ct) =>
     {
-      var result = await handler.HandleAsync(new ListDocumentsQuery(page, size, sort, desc, title, status, tag), ct);
+      var result = await handler.HandleAsync(new ListDocumentsQuery(
+        request.Page, 
+        request.Size, 
+        request.Sort, 
+        request.Desc, 
+        request.Title, 
+        request.Status, 
+        request.Tag), ct);
+
       var dto = result.Items.Select(d => new DocumentListItemResponse(d.Id.Value, d.Title, d.FileName, d.Status.ToString())).ToList();
       return Results.Ok(new PageResponse<DocumentListItemResponse>(dto, result.PageNumber, result.PageSize, result.TotalCount));
-    });
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ListDocumentsRequest>());
 
     group.MapGet("/{id:guid}", async (Guid id, GetDocumentHandler handler, CancellationToken ct) =>
     {
