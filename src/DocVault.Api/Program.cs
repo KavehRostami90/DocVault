@@ -4,6 +4,7 @@ using DocVault.Api.Middleware;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
 // Minimal bootstrap logger captures startup errors before full config loads
 Log.Logger = new LoggerConfiguration()
@@ -57,8 +58,16 @@ try
   if (app.Environment.IsDevelopment())
   {
     // OpenAPI document: /openapi/v1.json
+    // Swagger UI:       /swagger
     // Scalar UI:        /scalar/v1
-    
+    app.UseSwaggerUI(c =>
+    {
+      c.SwaggerEndpoint("/openapi/v1.json", "DocVault API v1");
+      c.RoutePrefix = "swagger";
+      c.DocumentTitle = "DocVault API";
+      c.DefaultModelExpandDepth(2);
+      c.DisplayRequestDuration();
+    });
   }
   app.MapOpenApi();
   app.MapScalarApiReference();
