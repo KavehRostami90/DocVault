@@ -91,12 +91,13 @@ public class EfDocumentRepository : IDocumentRepository
     q = q.Where(BuildTermsFilter(terms));
 
     var total = await q.LongCountAsync(cancellationToken);
-    var docs  = await q.OrderByDescending(d => d.UpdatedAt ?? d.CreatedAt)
-                       .Skip((page - 1) * size)
-                       .Take(size)
-                       .ToListAsync(cancellationToken);
+    var docs  = await q.ToListAsync(cancellationToken);
 
-    var items = docs.Select(d => new SearchResultItem(d, ComputeScore(d, terms))).ToList();
+    var items = docs.Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
+                    .OrderByDescending(item => item.Score)
+                    .Skip((page - 1) * size)
+                    .Take(size)
+                    .ToList();
     return new Page<SearchResultItem>(items, page, size, total);
   }
 

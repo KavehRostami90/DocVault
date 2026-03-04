@@ -2,20 +2,24 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DocVault.IntegrationTests.Infrastructure;
 using Xunit;
 
 namespace DocVault.IntegrationTests.Api;
 
-public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
+public sealed class DocumentUploadTests : BaseIntegrationTest
 {
-  private readonly HttpClient _client;
-
   private static readonly byte[] PDF_BYTES = "%PDF-1.4 test"u8.ToArray();
   private static readonly byte[] TXT_BYTES = "Hello, integration test."u8.ToArray();
 
-  public DocumentUploadTests(DocVaultFactory factory)
+  public DocumentUploadTests(DocVaultFactory factory) : base(factory)
   {
-    _client = factory.CreateClient();
+  }
+
+  protected override Task SeedTestDataAsync()
+  {
+    // No test data seeding needed for upload tests
+    return Task.CompletedTask;
   }
 
   // ---------------------------------------------------------------------------
@@ -25,7 +29,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
   [Fact]
   public async Task Post_ValidPdf_Returns201WithId()
   {
-    var response = await _client.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/documents", BuildForm(
       file: (PDF_BYTES, "report.pdf", "application/pdf"),
       title: "Quarterly Report",
       tags: ["finance", "q4"]));
@@ -41,7 +45,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
   [Fact]
   public async Task Post_ValidTxt_Returns201()
   {
-    var response = await _client.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/documents", BuildForm(
       file: (TXT_BYTES, "notes.txt", "text/plain"),
       title: "Meeting notes"));
 
@@ -51,7 +55,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
   [Fact]
   public async Task Post_NoTags_Returns201()
   {
-    var response = await _client.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/documents", BuildForm(
       file: (TXT_BYTES, "plain.txt", "text/plain"),
       title: "No tags doc"));
 
@@ -68,7 +72,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent("Some title"), "title");
 
-    var response = await _client.PostAsync("/documents", form);
+    var response = await HttpClient.PostAsync("/documents", form);
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     var body = await ParseJsonAsync(response);
@@ -78,7 +82,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
   [Fact]
   public async Task Post_EmptyTitle_Returns400WithError()
   {
-    var response = await _client.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/documents", BuildForm(
       file: (TXT_BYTES, "file.txt", "text/plain"),
       title: ""));
 
@@ -90,7 +94,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
   [Fact]
   public async Task Post_UnsupportedContentType_Returns400WithError()
   {
-    var response = await _client.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/documents", BuildForm(
       file: ([0xFF, 0xD8], "photo.jpg", "image/jpeg"),
       title: "A photo"));
 
@@ -106,7 +110,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
   [Fact]
   public async Task Post_JsonBody_Returns400MustBeMultipart()
   {
-    var response = await _client.PostAsJsonAsync("/documents", new { title = "test", fileName = "test.pdf" });
+    var response = await HttpClient.PostAsJsonAsync("/documents", new { title = "test", fileName = "test.pdf" });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
   }
@@ -121,7 +125,7 @@ public sealed class DocumentUploadTests : IClassFixture<DocVaultFactory>
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(""), "title");
 
-    var response = await _client.PostAsync("/documents", form);
+    var response = await HttpClient.PostAsync("/documents", form);
     var body = await ParseJsonAsync(response);
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
