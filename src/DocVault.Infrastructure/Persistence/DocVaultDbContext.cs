@@ -11,6 +11,7 @@ public class DocVaultDbContext : DbContext
   public DbSet<Document> Documents => Set<Document>();
   public DbSet<Tag> Tags => Set<Tag>();
   public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
+  public DbSet<IndexingQueueEntry> IndexingQueue => Set<IndexingQueueEntry>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {

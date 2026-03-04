@@ -3,6 +3,7 @@ using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
+using DocVault.Application.Background.Queue;
 using DocVault.Infrastructure.Embeddings;
 using DocVault.Infrastructure.Messaging;
 using DocVault.Infrastructure.Messaging.Handlers;
@@ -22,17 +23,24 @@ public static class DependencyInjection
   {
     var connectionString = configuration.GetConnectionString("Database");
 
-    services.AddDbContext<DocVaultDbContext>(options =>
+    if (string.IsNullOrWhiteSpace(connectionString))
     {
-      if (string.IsNullOrWhiteSpace(connectionString))
-      {
-        options.UseInMemoryDatabase("docvault");
-      }
-      else
-      {
-        options.UseNpgsql(connectionString);
-      }
-    });
+      services.AddDbContext<DocVaultDbContext>(options => options.UseInMemoryDatabase("docvault"));
+    }
+    else
+    {
+      // AddDbContextFactory registers DbContextOptions<T> as Singleton, which allows the
+      // factory itself to be Singleton (consumed by PostgresWorkQueue).
+      // The explicit AddScoped below gives repositories the per-request DbContext they expect,
+      // without re-registering options as Scoped (which would cause the Singleton → Scoped
+      // lifetime violation caught by the DI validator).
+      services.AddDbContextFactory<DocVaultDbContext>(options => options.UseNpgsql(connectionString));
+      services.AddScoped(sp =>
+        sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
+
+      // Override the in-process ChannelWorkQueue registered by the Application layer.
+      services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
+    }
 
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();
     services.AddScoped<ITagRepository, EfTagRepository>();
