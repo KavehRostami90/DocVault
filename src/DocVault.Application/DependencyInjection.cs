@@ -33,7 +33,7 @@ public static class DependencyInjection
     services.AddSingleton<EmbeddingStage>();
     services.AddSingleton<IndexStage>();
     services.AddSingleton(_ => DefaultHooks.Empty);
-    services.AddSingleton<IngestionPipeline>();
+    services.AddSingleton<IIngestionPipeline, IngestionPipeline>();
 
     // Channel-backed queue: thread-safe, async-blocking, no extra package.
     services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();

@@ -20,13 +20,13 @@ namespace DocVault.Application.Background;
 public sealed partial class IndexingWorker : BackgroundService
 {
   private readonly IWorkQueue<IndexingWorkItem> _queue;
-  private readonly IngestionPipeline _pipeline;
+  private readonly IIngestionPipeline _pipeline;
   private readonly IServiceScopeFactory _scopeFactory;
   private readonly ILogger<IndexingWorker> _logger;
 
   public IndexingWorker(
     IWorkQueue<IndexingWorkItem> queue,
-    IngestionPipeline pipeline,
+    IIngestionPipeline pipeline,
     IServiceScopeFactory scopeFactory,
     ILogger<IndexingWorker> logger)
   {

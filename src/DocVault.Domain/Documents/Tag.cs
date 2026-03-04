@@ -1,11 +1,10 @@
+using DocVault.Domain.Common;
 using DocVault.Domain.Primitives;
 
 namespace DocVault.Domain.Documents;
 
 public class Tag : Entity<Guid>
 {
-  private const int MAX_NAME_LENGTH = 50;
-  private const int MIN_NAME_LENGTH = 1;
 
   public string Name { get; private set; }
 
@@ -31,12 +30,12 @@ public class Tag : Entity<Guid>
 
     var trimmedName = name.Trim();
 
-    if (trimmedName.Length < MIN_NAME_LENGTH || trimmedName.Length > MAX_NAME_LENGTH)
-      throw new DomainException($"Tag name must be between {MIN_NAME_LENGTH} and {MAX_NAME_LENGTH} characters");
+    if (trimmedName.Length < ValidationConstants.Tags.MIN_NAME_LENGTH || trimmedName.Length > ValidationConstants.Tags.MAX_NAME_LENGTH)
+      throw new DomainException($"Tag name must be between {ValidationConstants.Tags.MIN_NAME_LENGTH} and {ValidationConstants.Tags.MAX_NAME_LENGTH} characters");
 
     if (!trimmedName.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_'))
       throw new DomainException("Tag name can only contain letters, digits, hyphens, and underscores");
 
-    Name = trimmedName.ToLowerInvariant(); // Normalize to lowercase for consistency
+    Name = trimmedName.ToLowerInvariant();
   }
 }
