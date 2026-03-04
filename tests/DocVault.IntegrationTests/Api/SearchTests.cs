@@ -5,6 +5,9 @@ using System.Text.Json.Nodes;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Domain.Documents;
 using DocVault.Domain.Documents.ValueObjects;
+using DocVault.Infrastructure.Persistence;
+using DocVault.IntegrationTests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -15,11 +18,8 @@ namespace DocVault.IntegrationTests.Api;
 /// Documents are seeded directly via IDocumentRepository so tests are
 /// deterministic and do not rely on the background indexing worker.
 /// </summary>
-public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
+public sealed class SearchTests : BaseIntegrationTest
 {
-  private readonly DocVaultFactory _factory;
-  private readonly HttpClient _client;
-
   // Unique sentinel terms so seeded docs don't collide with anything uploaded
   // by other test classes sharing infrastructure.
   private const string TITLE_ONLY_TERM = "Photosynthesis8472";
@@ -27,25 +27,29 @@ public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
   private const string SHARED_TERM     = "biology5501";
   private const string NO_MATCH_TERM   = "zxkqwerty00000";
 
-  // Seeded document ids — resolved in InitializeAsync so assertions can filter by id.
+  // Seeded document ids — resolved in SeedTestDataAsync so assertions can filter by id.
   private Guid _aiDocId;
   private Guid _mlDocId;
   private Guid _dockerDocId;
 
-  public SearchTests(DocVaultFactory factory)
+  public SearchTests(DocVaultFactory factory) : base(factory)
   {
-    _factory = factory;
-    _client  = factory.CreateClient();
   }
 
   // ---------------------------------------------------------------------------
   // Seed
   // ---------------------------------------------------------------------------
 
-  public async Task InitializeAsync()
+  protected override async Task SeedTestDataAsync()
   {
-    using var scope = _factory.Services.CreateScope();
+    using var scope = Factory.Services.CreateScope();
     var repo = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+    var context = scope.ServiceProvider.GetRequiredService<DocVaultDbContext>();
+
+    // Clear any documents from previous tests in this class fixture
+    var allDocs = await context.Documents.ToListAsync();
+    context.Documents.RemoveRange(allDocs);
+    await context.SaveChangesAsync();
 
     // Doc 1 — TITLE_ONLY_TERM in title; SHARED_TERM in both title and text
     var doc1 = MakeDocument(
@@ -68,8 +72,6 @@ public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
     await repo.AddAsync(doc3);
     _dockerDocId = doc3.Id.Value;
   }
-
-  public Task DisposeAsync() => Task.CompletedTask;
 
   // ---------------------------------------------------------------------------
   // Happy path — result shape
@@ -192,7 +194,7 @@ public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
   [Fact]
   public async Task Search_EmptyQuery_Returns400WithValidationError()
   {
-    var response = await _client.PostAsJsonAsync("/search/documents", new { query = "", page = 1, size = 10 });
+    var response = await HttpClient.PostAsJsonAsync("/search/documents", new { query = "", page = 1, size = 10 });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -207,7 +209,7 @@ public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
   public async Task Search_QueryExceedsMaxLength_Returns400()
   {
     var longQuery = new string('a', 513);
-    var response = await _client.PostAsJsonAsync("/search/documents", new { query = longQuery, page = 1, size = 10 });
+    var response = await HttpClient.PostAsJsonAsync("/search/documents", new { query = longQuery, page = 1, size = 10 });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
   }
@@ -215,7 +217,7 @@ public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
   [Fact]
   public async Task Search_InvalidPage_Returns400()
   {
-    var response = await _client.PostAsJsonAsync("/search/documents", new { query = "test", page = 0, size = 10 });
+    var response = await HttpClient.PostAsJsonAsync("/search/documents", new { query = "test", page = 0, size = 10 });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
   }
@@ -226,7 +228,7 @@ public sealed class SearchTests : IClassFixture<DocVaultFactory>, IAsyncLifetime
 
   private async Task<SearchPage> PostSearchAsync(string query, int page = 1, int size = 10)
   {
-    var response = await _client.PostAsJsonAsync("/search/documents",
+    var response = await HttpClient.PostAsJsonAsync("/search/documents",
       new { query, page, size });
 
     response.EnsureSuccessStatusCode();
