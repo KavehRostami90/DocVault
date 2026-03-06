@@ -11,6 +11,7 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\DocVault.Api\DocVault.Api.csproj" />
     <ProjectReference Include="..\..\src\DocVault.Application\DocVault.Application.csproj" />
     <ProjectReference Include="..\..\src\DocVault.Domain\DocVault.Domain.csproj" />
     <ProjectReference Include="..\..\src\DocVault.Infrastructure\DocVault.Infrastructure.csproj" />
