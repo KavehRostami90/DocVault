@@ -27,4 +27,13 @@ public class EfTagRepository : ITagRepository
     var list = await _db.Tags.Where(t => names.Contains(t.Name)).ToListAsync(cancellationToken);
     return list;
   }
+
+  public async Task<IReadOnlyCollection<Tag>> ListAsync(CancellationToken cancellationToken = default)
+  {
+    var list = await _db.Tags
+      .AsNoTracking()
+      .OrderBy(t => t.Name)
+      .ToListAsync(cancellationToken);
+    return list;
+  }
 }

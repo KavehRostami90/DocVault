@@ -11,6 +11,7 @@ using DocVault.Application.UseCases.Documents.UpdateTags;
 using DocVault.Application.UseCases.Imports.GetImportStatus;
 using DocVault.Application.UseCases.Imports.StartImportJob;
 using DocVault.Application.UseCases.Search;
+using DocVault.Application.UseCases.Tags.ListTags;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DocVault.Application;
@@ -27,6 +28,7 @@ public static class DependencyInjection
     services.AddScoped<SearchDocumentsHandler>();
     services.AddScoped<StartImportJobHandler>();
     services.AddScoped<GetImportStatusHandler>();
+    services.AddScoped<ListTagsHandler>();
 
     services.AddSingleton<FileReadStage>();
     services.AddSingleton<TextExtractStage>();
