@@ -4,7 +4,6 @@ using DocVault.Api.Middleware;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
-using Swashbuckle.AspNetCore.SwaggerUI;
 
 // Minimal bootstrap logger captures startup errors before full config loads
 Log.Logger = new LoggerConfiguration()

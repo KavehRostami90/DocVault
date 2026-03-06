@@ -23,7 +23,10 @@ public static class SearchEndpoints
       var items = page.Items.Select(ToResponse).ToList();
       return Results.Ok(new PageResponse<SearchResultItemResponse>(items, request.Page, request.Size, page.TotalCount));
     })
-    .AddEndpointFilterFactory(ValidationFilter.Create<SearchRequest>());
+    .AddEndpointFilterFactory(ValidationFilter.Create<SearchRequest>())
+    .Produces<PageResponse<SearchResultItemResponse>>(StatusCodes.Status200OK)
+    .WithSummary("Search documents")
+    .WithDescription("Performs full-text search over documents and returns paged results.");
 
     return routes;
   }
