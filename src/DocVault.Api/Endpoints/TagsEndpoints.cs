@@ -4,6 +4,9 @@ using DocVault.Application.Abstractions.Persistence;
 
 namespace DocVault.Api.Endpoints;
 
+/// <summary>
+/// Maps tag endpoints.
+/// </summary>
 public static class TagsEndpoints
 {
   public static IEndpointRouteBuilder MapTagsEndpoints(this IEndpointRouteBuilder routes)

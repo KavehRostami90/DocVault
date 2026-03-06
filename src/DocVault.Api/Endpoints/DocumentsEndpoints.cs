@@ -11,6 +11,9 @@ using DocVault.Domain.Documents;
 
 namespace DocVault.Api.Endpoints;
 
+/// <summary>
+/// Maps document-related endpoints.
+/// </summary>
 public static class DocumentsEndpoints
 {
   public static IEndpointRouteBuilder MapDocumentsEndpoints(this IEndpointRouteBuilder routes)

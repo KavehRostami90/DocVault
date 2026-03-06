@@ -5,6 +5,9 @@ using DocVault.Application.UseCases.Imports.StartImportJob;
 
 namespace DocVault.Api.Endpoints;
 
+/// <summary>
+/// Maps import endpoints.
+/// </summary>
 public static class ImportsEndpoints
 {
   public static IEndpointRouteBuilder MapImportsEndpoints(this IEndpointRouteBuilder routes)
