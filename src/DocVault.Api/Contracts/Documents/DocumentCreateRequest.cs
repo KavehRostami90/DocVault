@@ -4,9 +4,11 @@ using DocVault.Api.Validation;
 namespace DocVault.Api.Contracts.Documents;
 
 /// <summary>
-/// Bound from multipart/form-data. File content drives FileName, ContentType and Size;
-/// Title and Tags are explicit form fields.
+/// Bound from multipart/form-data. File content drives FileName, ContentType and Size; Title and Tags are explicit form fields.
 /// </summary>
+/// <param name="File">Binary file content to import.</param>
+/// <param name="Title">Human-friendly title for the document.</param>
+/// <param name="Tags">Tags to associate with the document.</param>
 public sealed record DocumentCreateRequest(
   IFormFile? File,
   string Title,

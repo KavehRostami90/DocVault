@@ -31,7 +31,10 @@ public static class DocumentsEndpoints
       var dto = result.Items.Select(d => new DocumentListItemResponse(d.Id.Value, d.Title, d.FileName, d.Status.ToString())).ToList();
       return Results.Ok(new PageResponse<DocumentListItemResponse>(dto, result.PageNumber, result.PageSize, result.TotalCount));
     })
-    .AddEndpointFilterFactory(ValidationFilter.Create<ListDocumentsRequest>());
+    .AddEndpointFilterFactory(ValidationFilter.Create<ListDocumentsRequest>())
+    .Produces<PageResponse<DocumentListItemResponse>>(StatusCodes.Status200OK)
+    .WithSummary("List documents")
+    .WithDescription("Returns paged documents with optional sort and filter.");
 
     group.MapGet("/{id:guid}", async (Guid id, GetDocumentHandler handler, CancellationToken ct) =>
     {
@@ -39,7 +42,11 @@ public static class DocumentsEndpoints
       return outcome.IsSuccess
         ? Results.Ok(ToReadResponse(outcome.Value!))
         : Results.NotFound();
-    });
+    })
+    .Produces<DocumentReadResponse>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Get a document")
+    .WithDescription("Returns a single document by identifier.");
 
     group.MapPost("/", async (DocumentCreateRequest request, ImportDocumentHandler handler, CancellationToken ct) =>
     {
@@ -59,20 +66,32 @@ public static class DocumentsEndpoints
         : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status422UnprocessableEntity);
     })
     .DisableAntiforgery()
-    .AddEndpointFilterFactory(ValidationFilter.Create<DocumentCreateRequest>());
+    .AddEndpointFilterFactory(ValidationFilter.Create<DocumentCreateRequest>())
+    .Produces(StatusCodes.Status201Created)
+    .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+    .WithSummary("Create (import) a document")
+    .WithDescription("Imports a document from multipart/form-data and starts processing.");
 
     group.MapPut("/{id:guid}/tags", async (Guid id, DocumentUpdateRequest request, UpdateTagsHandler handler, CancellationToken ct) =>
     {
       var result = await handler.HandleAsync(new UpdateTagsCommand(new DocumentId(id), request.Tags), ct);
       return result.IsSuccess ? Results.NoContent() : Results.NotFound();
     })
-    .AddEndpointFilterFactory(ValidationFilter.Create<DocumentUpdateRequest>());
+    .AddEndpointFilterFactory(ValidationFilter.Create<DocumentUpdateRequest>())
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Update document tags")
+    .WithDescription("Replaces the tag set for a document.");
 
     group.MapDelete("/{id:guid}", async (Guid id, DeleteDocumentHandler handler, CancellationToken ct) =>
     {
       var result = await handler.HandleAsync(new DeleteDocumentCommand(new DocumentId(id)), ct);
       return result.IsSuccess ? Results.NoContent() : Results.NotFound();
-    });
+    })
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Delete a document")
+    .WithDescription("Deletes a document by identifier.");
 
     return routes;
   }
