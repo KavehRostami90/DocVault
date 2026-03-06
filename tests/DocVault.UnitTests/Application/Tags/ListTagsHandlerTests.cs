@@ -9,14 +9,10 @@ namespace DocVault.UnitTests.Application.Tags;
 public class ListTagsHandlerTests
 {
     [Fact]
-    public async Task HandleAsync_ReturnsNames_FromRepositoryResults()
+    public async Task Returns_names_in_repository_order()
     {
         var cancellationToken = new CancellationTokenSource().Token;
-        var tags = new[]
-        {
-            new Tag("alpha"),
-            new Tag("beta")
-        };
+        var tags = new[] { TagNamed("alpha"), TagNamed("beta") };
 
         var repository = new Mock<ITagRepository>();
         repository.Setup(r => r.ListAsync(cancellationToken)).ReturnsAsync(tags);
@@ -27,10 +23,11 @@ public class ListTagsHandlerTests
 
         Assert.Equal(new[] { "alpha", "beta" }, result);
         repository.Verify(r => r.ListAsync(cancellationToken), Times.Once);
+        repository.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task HandleAsync_PropagatesExceptions_FromRepository()
+    public async Task Propagates_repository_exception_without_swallowing()
     {
         var cancellationToken = CancellationToken.None;
         var repository = new Mock<ITagRepository>();
@@ -40,10 +37,11 @@ public class ListTagsHandlerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(cancellationToken));
         repository.Verify(r => r.ListAsync(cancellationToken), Times.Once);
+        repository.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task HandleAsync_ReturnsEmpty_WhenNoTags()
+    public async Task Returns_empty_collection_when_repository_is_empty()
     {
         var cancellationToken = CancellationToken.None;
         var repository = new Mock<ITagRepository>();
@@ -55,5 +53,8 @@ public class ListTagsHandlerTests
 
         Assert.Empty(result);
         repository.Verify(r => r.ListAsync(cancellationToken), Times.Once);
+        repository.VerifyNoOtherCalls();
     }
+
+    private static Tag TagNamed(string name) => new(name);
 }
