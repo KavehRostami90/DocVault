@@ -1,5 +1,8 @@
 namespace DocVault.Api.Endpoints;
 
+/// <summary>
+/// Maps health endpoints.
+/// </summary>
 public static class HealthEndpoints
 {
   public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder routes)

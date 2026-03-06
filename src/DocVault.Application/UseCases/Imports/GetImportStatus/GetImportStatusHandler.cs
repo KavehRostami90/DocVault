@@ -5,15 +5,28 @@ using DocVault.Domain.Imports;
 
 namespace DocVault.Application.UseCases.Imports.GetImportStatus;
 
+/// <summary>
+/// Handles retrieval of import job status.
+/// </summary>
 public sealed class GetImportStatusHandler
 {
   private readonly IImportJobRepository _imports;
 
+  /// <summary>
+  /// Creates a new handler for import status lookups.
+  /// </summary>
+  /// <param name="imports">Import job repository.</param>
   public GetImportStatusHandler(IImportJobRepository imports)
   {
     _imports = imports;
   }
 
+  /// <summary>
+  /// Retrieves the status of an import job by id.
+  /// </summary>
+  /// <param name="query">Query containing the job id.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
+  /// <returns>Result containing the job when found.</returns>
   public async Task<Result<ImportJob>> HandleAsync(GetImportStatusQuery query, CancellationToken cancellationToken = default)
   {
     var job = await _imports.GetAsync(query.Id, cancellationToken);

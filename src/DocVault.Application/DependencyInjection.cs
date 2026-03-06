@@ -18,6 +18,10 @@ namespace DocVault.Application;
 
 public static class DependencyInjection
 {
+  /// <summary>
+  /// Registers application-layer services, handlers, pipeline stages, and background workers.
+  /// </summary>
+  /// <param name="services">Service collection to populate.</param>
   public static IServiceCollection AddApplication(this IServiceCollection services)
   {
     services.AddScoped<ImportDocumentHandler>();

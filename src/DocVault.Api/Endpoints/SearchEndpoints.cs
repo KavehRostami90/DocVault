@@ -5,6 +5,9 @@ using DocVault.Application.UseCases.Search;
 
 namespace DocVault.Api.Endpoints;
 
+/// <summary>
+/// Maps search endpoints.
+/// </summary>
 public static class SearchEndpoints
 {
   public static IEndpointRouteBuilder MapSearchEndpoints(this IEndpointRouteBuilder routes)

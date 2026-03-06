@@ -10,6 +10,11 @@ namespace DocVault.Api.Composition;
 
 public static class DependencyInjection
 {
+  /// <summary>
+  /// Registers API-layer services, OpenAPI support, exception handling, and validators.
+  /// </summary>
+  /// <param name="services">Service collection to populate.</param>
+  /// <param name="configuration">Configuration source.</param>
   public static IServiceCollection AddDocVault(this IServiceCollection services, IConfiguration configuration)
   {
     services.AddApplication();

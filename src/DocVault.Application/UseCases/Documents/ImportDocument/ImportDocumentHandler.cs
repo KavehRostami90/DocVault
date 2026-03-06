@@ -9,6 +9,9 @@ using DocVault.Domain.Imports;
 
 namespace DocVault.Application.UseCases.Documents.ImportDocument;
 
+/// <summary>
+/// Handles importing a document, persisting metadata, and enqueuing indexing work.
+/// </summary>
 public sealed class ImportDocumentHandler
 {
   private readonly IDocumentRepository _documents;
@@ -16,6 +19,9 @@ public sealed class ImportDocumentHandler
   private readonly IFileStorage _storage;
   private readonly IWorkQueue<IndexingWorkItem> _queue;
 
+  /// <summary>
+  /// Initializes the handler with required repositories and services.
+  /// </summary>
   public ImportDocumentHandler(
     IDocumentRepository documents,
     IImportJobRepository imports,
@@ -28,6 +34,12 @@ public sealed class ImportDocumentHandler
     _queue     = queue;
   }
 
+  /// <summary>
+  /// Imports a document and returns its identifier.
+  /// </summary>
+  /// <param name="command">Import command payload.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
+  /// <returns>Result containing the document identifier on success.</returns>
   public async Task<Result<DocumentId>> HandleAsync(ImportDocumentCommand command, CancellationToken cancellationToken = default)
   {
     var documentId = DocumentId.New();
