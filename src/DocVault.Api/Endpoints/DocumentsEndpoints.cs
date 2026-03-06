@@ -1,6 +1,7 @@
 using DocVault.Api.Contracts.Common;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Validation;
+using DocVault.Api.Mappers;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
@@ -31,8 +32,7 @@ public static class DocumentsEndpoints
         request.Status, 
         request.Tag), ct);
 
-      var dto = result.Items.Select(d => new DocumentListItemResponse(d.Id.Value, d.Title, d.FileName, d.Status.ToString())).ToList();
-      return Results.Ok(new PageResponse<DocumentListItemResponse>(dto, result.PageNumber, result.PageSize, result.TotalCount));
+      return Results.Ok(DocumentResponseMapper.ToPage(result));
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<ListDocumentsRequest>())
     .Produces<PageResponse<DocumentListItemResponse>>(StatusCodes.Status200OK)
@@ -43,7 +43,7 @@ public static class DocumentsEndpoints
     {
       var outcome = await handler.HandleAsync(new GetDocumentQuery(new DocumentId(id)), ct);
       return outcome.IsSuccess
-        ? Results.Ok(ToReadResponse(outcome.Value!))
+        ? Results.Ok(DocumentResponseMapper.ToRead(outcome.Value!))
         : Results.NotFound();
     })
     .Produces<DocumentReadResponse>(StatusCodes.Status200OK)
@@ -99,6 +99,4 @@ public static class DocumentsEndpoints
     return routes;
   }
 
-  private static DocumentReadResponse ToReadResponse(Document document)
-    => new(document.Id.Value, document.Title, document.FileName, document.ContentType, document.Size, document.Status.ToString(), document.Tags.Select(t => t.Name).ToList());
 }
