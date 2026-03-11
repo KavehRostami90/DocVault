@@ -31,5 +31,3 @@ appsettings.*.Local.json
 # Docker local overrides
 docker-compose.override.yml
 
-# Local Copilot instructions (machine-specific, not for the repo)
-.github/
