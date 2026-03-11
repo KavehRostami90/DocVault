@@ -25,6 +25,14 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
 
   public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
   {
+    // Client disconnected — no one is listening; skip response entirely.
+    if (exception is OperationCanceledException && cancellationToken.IsCancellationRequested)
+    {
+      LogRequestCancelled(httpContext.Request.Path);
+      httpContext.Response.StatusCode = 499; // nginx convention for "client closed request"
+      return true;
+    }
+
     var descriptor = MapException(exception);
 
     if (descriptor.StatusCode >= StatusCodes.Status500InternalServerError)
@@ -78,10 +86,13 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
       JsonBindingException jsonBinding      => MapJsonBindingException(jsonBinding),
       BadHttpRequestException badRequest    => new ErrorDescriptor(badRequest.StatusCode, "Bad request", ErrorCodes.BadRequest.MALFORMED_BODY, badRequest.Message),
       ValidationException validation        => MapValidationException(validation),
-      DomainException domain                => new ErrorDescriptor(StatusCodes.Status400BadRequest, "Domain rule violated", ErrorCodes.BadRequest.DOMAIN_VIOLATION, domain.Message),
+      ConflictException conflict            => new ErrorDescriptor(StatusCodes.Status409Conflict, "Resource conflict", ErrorCodes.Conflict.DUPLICATE_RESOURCE, conflict.Message, new Dictionary<string, object> { ["domainCode"] = conflict.Code }),
+      DomainException domain                => new ErrorDescriptor(StatusCodes.Status400BadRequest, "Domain rule violated", ErrorCodes.BadRequest.DOMAIN_VIOLATION, domain.Message, new Dictionary<string, object> { ["domainCode"] = domain.Code }),
       KeyNotFoundException notFound         => new ErrorDescriptor(StatusCodes.Status404NotFound, "Resource not found", ErrorCodes.NotFound.RESOURCE_MISSING, string.IsNullOrWhiteSpace(notFound.Message) ? "The requested resource was not found." : notFound.Message),
       UnauthorizedAccessException           => new ErrorDescriptor(StatusCodes.Status403Forbidden, "Forbidden", ErrorCodes.Forbidden.ACCESS_DENIED, "Access denied."),
-      DbUpdateException dbUpdate            => new ErrorDescriptor(StatusCodes.Status503ServiceUnavailable, "Database error", ErrorCodes.ServerError.DATABASE_FAILURE, dbUpdate.InnerException?.Message ?? dbUpdate.Message),
+      TimeoutException                      => new ErrorDescriptor(StatusCodes.Status504GatewayTimeout, "Gateway timeout", ErrorCodes.ServerError.GATEWAY_TIMEOUT, "The operation timed out. Please try again."),
+      OperationCanceledException            => new ErrorDescriptor(StatusCodes.Status503ServiceUnavailable, "Service unavailable", ErrorCodes.ServerError.EXTERNAL_SERVICE, "The request was cancelled or the service is temporarily unavailable."),
+      DbUpdateException                     => new ErrorDescriptor(StatusCodes.Status503ServiceUnavailable, "Database error", ErrorCodes.ServerError.DATABASE_FAILURE, "A database error occurred. Please try again later."),
       _                                     => new ErrorDescriptor(StatusCodes.Status500InternalServerError, "Unexpected error", ErrorCodes.ServerError.UNHANDLED, "An unexpected error occurred.")
     };
 
@@ -122,4 +133,7 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
 
   [LoggerMessage(Level = LogLevel.Warning, Message = "Handled exception => {StatusCode} ({ErrorCode}) Path:{Path}. Message: {Message}")]
   private partial void LogHandledException(int statusCode, string errorCode, string path, string message);
+
+  [LoggerMessage(Level = LogLevel.Debug, Message = "Request cancelled by client. Path:{Path}")]
+  private partial void LogRequestCancelled(string path);
 }

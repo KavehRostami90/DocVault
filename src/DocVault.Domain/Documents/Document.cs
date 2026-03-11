@@ -52,10 +52,10 @@ public class Document : AggregateRoot<DocumentId>
 
   public void ReplaceTags(IEnumerable<Tag> tags)
   {
-    var tagsList = tags?.ToList() ?? throw new DomainException("Tags cannot be null");
+    var tagsList = tags?.ToList() ?? throw new DomainException(DomainErrorCodes.TagsRequired, "Tags cannot be null");
 
     if (tagsList.Count > ValidationConstants.Tags.MAX_TAGS_PER_DOCUMENT)
-      throw new DomainException($"Cannot have more than {ValidationConstants.Tags.MAX_TAGS_PER_DOCUMENT} tags");
+      throw new DomainException(DomainErrorCodes.TagLimitExceeded, $"Cannot have more than {ValidationConstants.Tags.MAX_TAGS_PER_DOCUMENT} tags");
 
     _tags.Clear();
     _tags.AddRange(tagsList);
@@ -65,10 +65,10 @@ public class Document : AggregateRoot<DocumentId>
   private void SetTitle(string title)
   {
     if (string.IsNullOrWhiteSpace(title))
-      throw new DomainException("Title cannot be empty or whitespace");
+      throw new DomainException(DomainErrorCodes.TitleRequired, "Title cannot be empty or whitespace");
 
     if (title.Length < ValidationConstants.Documents.MIN_TITLE_LENGTH || title.Length > ValidationConstants.Documents.MAX_TITLE_LENGTH)
-      throw new DomainException($"Title must be between {ValidationConstants.Documents.MIN_TITLE_LENGTH} and {ValidationConstants.Documents.MAX_TITLE_LENGTH} characters");
+      throw new DomainException(DomainErrorCodes.TitleLength, $"Title must be between {ValidationConstants.Documents.MIN_TITLE_LENGTH} and {ValidationConstants.Documents.MAX_TITLE_LENGTH} characters");
 
     Title = title.Trim();
   }
@@ -76,10 +76,10 @@ public class Document : AggregateRoot<DocumentId>
   private void SetFileName(string fileName)
   {
     if (string.IsNullOrWhiteSpace(fileName))
-      throw new DomainException("File name cannot be empty or whitespace");
+      throw new DomainException(DomainErrorCodes.FileNameRequired, "File name cannot be empty or whitespace");
 
     if (INVALID_FILE_NAME_PATTERNS.Any(fileName.Contains))
-      throw new DomainException("File name contains invalid characters");
+      throw new DomainException(DomainErrorCodes.FileNameInvalid, "File name contains invalid characters");
 
     FileName = fileName.Trim();
   }
@@ -87,7 +87,7 @@ public class Document : AggregateRoot<DocumentId>
   private void SetContentType(string contentType)
   {
     if (string.IsNullOrWhiteSpace(contentType))
-      throw new DomainException("Content type cannot be empty");
+      throw new DomainException(DomainErrorCodes.ContentTypeRequired, "Content type cannot be empty");
 
     ContentType = contentType.Trim();
   }
@@ -95,7 +95,7 @@ public class Document : AggregateRoot<DocumentId>
   private void SetSize(long size)
   {
     if (size < ValidationConstants.Documents.MIN_FILE_SIZE_BYTES || size > ValidationConstants.Documents.MAX_FILE_SIZE_BYTES)
-      throw new DomainException($"File size must be between {ValidationConstants.Documents.MIN_FILE_SIZE_BYTES} bytes and {ValidationConstants.Documents.MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB");
+      throw new DomainException(DomainErrorCodes.FileSizeOutOfRange, $"File size must be between {ValidationConstants.Documents.MIN_FILE_SIZE_BYTES} bytes and {ValidationConstants.Documents.MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB");
 
     Size = size;
   }

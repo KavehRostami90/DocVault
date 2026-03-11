@@ -33,7 +33,9 @@ public static class ImportsEndpoints
         return Results.NotFound();
       }
       var job = result.Value;
-      return Results.Ok(new ImportStatusResponse(job.Id, job.FileName, job.Status.ToString(), job.StartedAt, job.CompletedAt, job.Error));
+      // Sanitize error: only expose a generic message — raw exception details stay in logs.
+      var safeError = job.Error is not null ? "The import job failed during processing." : null;
+      return Results.Ok(new ImportStatusResponse(job.Id, job.FileName, job.Status.ToString(), job.StartedAt, job.CompletedAt, safeError));
     })
     .Produces<ImportStatusResponse>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound)

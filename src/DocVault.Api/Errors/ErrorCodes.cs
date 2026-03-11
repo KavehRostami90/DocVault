@@ -34,5 +34,6 @@ internal static class ErrorCodes
     public const string UNHANDLED        = "DV-500-UNHANDLED";
     public const string DATABASE_FAILURE = "DV-503-DATABASE";
     public const string EXTERNAL_SERVICE = "DV-503-EXTERNAL";
+    public const string GATEWAY_TIMEOUT  = "DV-504-TIMEOUT";
   }
 }
