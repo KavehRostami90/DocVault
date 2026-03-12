@@ -62,7 +62,7 @@ public sealed class ImportDocumentHandler
     await _documents.AddAsync(document, cancellationToken);
 
     // Persist the job with enough data for crash-recovery re-enqueue.
-    var job = new ImportJob(Guid.NewGuid(), command.FileName, storagePath, command.ContentType);
+    var job = new ImportJob(Guid.NewGuid(), documentId, command.FileName, storagePath, command.ContentType);
     await _imports.AddAsync(job, cancellationToken);
 
     // Hand off to the background indexing pipeline.

@@ -16,7 +16,12 @@ public static class ImportsEndpoints
 
     group.MapPost("/", async (ImportCreateRequest request, StartImportJobHandler handler, CancellationToken ct) =>
     {
-      var result = await handler.HandleAsync(new StartImportJobCommand(request.FileName), ct);
+      var command = new StartImportJobCommand(
+        new DocVault.Domain.Documents.DocumentId(request.DocumentId),
+        request.FileName,
+        request.StoragePath,
+        request.ContentType);
+      var result = await handler.HandleAsync(command, ct);
       return result.IsSuccess ? Results.Accepted($"/imports/{result.Value}", new { id = result.Value }) : Results.BadRequest();
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<ImportCreateRequest>())

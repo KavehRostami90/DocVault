@@ -21,6 +21,12 @@ public sealed partial class PostgresWorkQueue : IWorkQueue<IndexingWorkItem>
   private readonly IDbContextFactory<DocVaultDbContext> _factory;
   private readonly ILogger<PostgresWorkQueue> _logger;
 
+  /// <summary>
+  /// Initialises the queue with a <see cref="IDbContextFactory{TContext}"/> (Singleton-safe)
+  /// and a logger.
+  /// </summary>
+  /// <param name="factory">Factory used to create short-lived <see cref="DocVaultDbContext"/> instances.</param>
+  /// <param name="logger">Logger for diagnostic messages.</param>
   public PostgresWorkQueue(
     IDbContextFactory<DocVaultDbContext> factory,
     ILogger<PostgresWorkQueue> logger)

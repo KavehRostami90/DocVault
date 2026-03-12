@@ -54,20 +54,30 @@ try
   // 3. ExceptionHandler — translates unhandled exceptions to problem+json responses
   app.UseExceptionHandler();
 
-  if (app.Environment.IsDevelopment())
+  // if (app.Environment.IsDevelopment())
+  // {
+  //   // OpenAPI document: /openapi/v1.json
+  //   // Swagger UI:       /swagger
+  //   // Scalar UI:        /scalar/v1
+  //   app.UseSwaggerUI(c =>
+  //   {
+  //     c.SwaggerEndpoint("/openapi/v1.json", "DocVault API v1");
+  //     c.RoutePrefix = "swagger";
+  //     c.DocumentTitle = "DocVault API";
+  //     c.DefaultModelExpandDepth(2);
+  //     c.DisplayRequestDuration();
+  //   });
+  // }
+
+  app.UseSwaggerUI(c =>
   {
-    // OpenAPI document: /openapi/v1.json
-    // Swagger UI:       /swagger
-    // Scalar UI:        /scalar/v1
-    app.UseSwaggerUI(c =>
-    {
-      c.SwaggerEndpoint("/openapi/v1.json", "DocVault API v1");
-      c.RoutePrefix = "swagger";
-      c.DocumentTitle = "DocVault API";
-      c.DefaultModelExpandDepth(2);
-      c.DisplayRequestDuration();
-    });
-  }
+    c.SwaggerEndpoint("/openapi/v1.json", "DocVault API v1");
+    c.RoutePrefix = "swagger";
+    c.DocumentTitle = "DocVault API";
+    c.DefaultModelExpandDepth(2);
+    c.DisplayRequestDuration();
+  });
+
   app.MapOpenApi();
   app.MapScalarApiReference();
   app.MapDocumentsEndpoints();

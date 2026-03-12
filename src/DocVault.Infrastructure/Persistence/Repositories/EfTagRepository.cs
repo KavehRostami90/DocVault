@@ -5,12 +5,15 @@ using Microsoft.EntityFrameworkCore;
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
 /// <summary>
-/// EF Core-backed tag repository.
+/// EF Core implementation of <see cref="ITagRepository"/>.
+/// Provides read and write operations for <see cref="Tag"/> entities.
 /// </summary>
 public class EfTagRepository : ITagRepository
 {
   private readonly DocVaultDbContext _db;
 
+  /// <summary>Initialises the repository with the scoped database context.</summary>
+  /// <param name="db">The EF Core database context for this request scope.</param>
   public EfTagRepository(DocVaultDbContext db)
   {
     _db = db;

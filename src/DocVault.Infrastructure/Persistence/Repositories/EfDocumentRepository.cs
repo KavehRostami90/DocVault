@@ -1,5 +1,4 @@
 using System.Linq.Expressions;
-using System.Reflection;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Filtering;
 using DocVault.Application.Common.Paging;
@@ -10,30 +9,55 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
+/// <summary>
+/// EF Core implementation of <see cref="IDocumentRepository"/>.
+/// Provides CRUD operations, paginated listing with dynamic filter/sort,
+/// and keyword-based full-text search using expression trees.
+/// </summary>
 public class EfDocumentRepository : IDocumentRepository
 {
   private readonly DocVaultDbContext _db;
 
+  /// <summary>Initialises the repository with the scoped database context.</summary>
+  /// <param name="db">The EF Core database context for this request scope.</param>
   public EfDocumentRepository(DocVaultDbContext db)
   {
     _db = db;
   }
 
+  /// <summary>Persists a new <see cref="Document"/> and saves changes.</summary>
+  /// <param name="document">The document aggregate to add.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
   public async Task AddAsync(Document document, CancellationToken cancellationToken = default)
   {
     await _db.Documents.AddAsync(document, cancellationToken);
     await _db.SaveChangesAsync(cancellationToken);
   }
 
+  /// <summary>Removes a <see cref="Document"/> and saves changes.</summary>
+  /// <param name="document">The document aggregate to delete.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
   public async Task DeleteAsync(Document document, CancellationToken cancellationToken = default)
   {
     _db.Documents.Remove(document);
     await _db.SaveChangesAsync(cancellationToken);
   }
 
+  /// <summary>Retrieves a single <see cref="Document"/> by its identifier, including its tags.</summary>
+  /// <param name="id">The document identifier.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
+  /// <returns>The matching document, or <c>null</c> if not found.</returns>
   public Task<Document?> GetAsync(DocumentId id, CancellationToken cancellationToken = default)
     => _db.Documents.Include(d => d.Tags).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
+  /// <summary>
+  /// Returns a paginated, filtered, and sorted page of documents.
+  /// Supported filter keys: <c>title</c>, <c>status</c>, <c>tag</c>.
+  /// Supported sort keys: <c>title</c>, <c>fileName</c>, <c>size</c>, <c>status</c>, <c>createdAt</c>, <c>updatedAt</c>.
+  /// </summary>
+  /// <param name="request">Pagination, filter, and sort parameters.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
+  /// <returns>A <see cref="Page{T}"/> containing the matching documents.</returns>
   public async Task<Page<Document>> ListAsync(PageRequest request, CancellationToken cancellationToken = default)
   {
     var query = _db.Documents.Include(d => d.Tags).AsQueryable();
@@ -71,12 +95,25 @@ public class EfDocumentRepository : IDocumentRepository
     return new Page<Document>(items, request.Page, request.Size, total);
   }
 
+  /// <summary>Updates an existing <see cref="Document"/> and saves changes.</summary>
+  /// <param name="document">The document aggregate with updated state.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
   public async Task UpdateAsync(Document document, CancellationToken cancellationToken = default)
   {
     _db.Documents.Update(document);
     await _db.SaveChangesAsync(cancellationToken);
   }
 
+  /// <summary>
+  /// Performs an in-database keyword search across document titles and extracted text.
+  /// Each term is OR-ed; results are ranked by a lightweight relevance score
+  /// (title match = 1.0, body match = 0.3) and returned as a paginated page.
+  /// </summary>
+  /// <param name="query">Whitespace-delimited search terms.</param>
+  /// <param name="page">1-based page number.</param>
+  /// <param name="size">Page size.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
+  /// <returns>A <see cref="Page{T}"/> of ranked <see cref="SearchResultItem"/> objects.</returns>
   public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, CancellationToken cancellationToken = default)
   {
     var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

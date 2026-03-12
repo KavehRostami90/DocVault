@@ -20,7 +20,7 @@ public sealed class IngestionPipeline : IIngestionPipeline
     _hooks = hooks;
   }
 
-  public async Task RunAsync(string path, string contentType, CancellationToken cancellationToken = default)
+  public async Task<string> RunAsync(string path, string contentType, CancellationToken cancellationToken = default)
   {
     var content = await _fileRead.ReadAsync(path, cancellationToken);
     var text = await _textExtract.ExtractAsync(content, contentType, cancellationToken);
@@ -30,5 +30,6 @@ public sealed class IngestionPipeline : IIngestionPipeline
     {
       await _hooks.AfterIndex(text, vector, cancellationToken);
     }
+    return text;
   }
 }

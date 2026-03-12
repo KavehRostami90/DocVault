@@ -85,9 +85,9 @@ public sealed partial class IndexingWorker : BackgroundService
   private async Task ProcessItemAsync(IndexingWorkItem item, CancellationToken ct)
   {
     using var scope = _scopeFactory.CreateScope();
-    var repo = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
+    var importJobRepository = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
 
-    var job = await repo.GetAsync(item.JobId, ct);
+    var job = await importJobRepository.GetAsync(item.JobId, ct);
     if (job is null)
     {
       LogJobNotFound(_logger, item.JobId);
@@ -95,15 +95,26 @@ public sealed partial class IndexingWorker : BackgroundService
     }
 
     job.MarkInProgress();
-    await repo.UpdateAsync(job, ct);
+    await importJobRepository.UpdateAsync(job, ct);
+
+    var documentRepository = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
 
     try
     {
       LogProcessing(_logger, item.JobId, item.StoragePath);
-      await _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
+      var extractedText = await _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
 
       job.MarkCompleted();
-      await repo.UpdateAsync(job, ct);
+      await importJobRepository.UpdateAsync(job, ct);
+
+      var document = await documentRepository.GetAsync(job.DocumentId, ct);
+      if (document is not null)
+      {
+        document.AttachText(extractedText);
+        document.MarkIndexed();
+        await documentRepository.UpdateAsync(document, ct);
+      }
+
       LogCompleted(_logger, item.JobId);
     }
     catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -112,7 +123,14 @@ public sealed partial class IndexingWorker : BackgroundService
       try
       {
         job.MarkFailed(ex.Message);
-        await repo.UpdateAsync(job, ct);
+        await importJobRepository.UpdateAsync(job, ct);
+
+        var document = await documentRepository.GetAsync(job.DocumentId, ct);
+        if (document is not null)
+        {
+          document.MarkFailed(ex.Message);
+          await documentRepository.UpdateAsync(document, ct);
+        }
       }
       catch (Exception updateEx)
       {

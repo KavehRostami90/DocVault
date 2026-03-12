@@ -6,5 +6,13 @@ namespace DocVault.Application.Pipeline;
 /// </summary>
 public interface IIngestionPipeline
 {
-  Task RunAsync(string path, string contentType, CancellationToken cancellationToken = default);
+  /// <summary>
+  /// Runs all pipeline stages for the given file and returns the extracted plain text.
+  /// The caller is responsible for persisting the returned text to the document record.
+  /// </summary>
+  /// <param name="path">Relative storage path of the file to process.</param>
+  /// <param name="contentType">MIME content type used to select the correct text extractor.</param>
+  /// <param name="cancellationToken">Cancellation token.</param>
+  /// <returns>The plain text extracted from the file.</returns>
+  Task<string> RunAsync(string path, string contentType, CancellationToken cancellationToken = default);
 }

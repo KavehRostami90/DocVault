@@ -17,8 +17,21 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace DocVault.Infrastructure;
 
+/// <summary>
+/// Extension methods for registering all infrastructure services with the DI container.
+/// </summary>
 public static class DependencyInjection
 {
+  /// <summary>
+  /// Registers EF Core, repositories, storage, text extractors, embedding provider,
+  /// messaging, and the database initializer.
+  /// When a <c>Database:ConnectionString</c> is configured, PostgreSQL is used and
+  /// <see cref="DocVault.Infrastructure.Messaging.PostgresWorkQueue"/> replaces the
+  /// in-process channel queue; otherwise an in-memory database is used.
+  /// </summary>
+  /// <param name="services">The service collection to configure.</param>
+  /// <param name="configuration">The application configuration.</param>
+  /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
   public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
   {
     var connectionString = configuration.GetConnectionString("Database");

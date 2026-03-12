@@ -25,4 +25,5 @@ public static class DomainErrorCodes
 
     // Import
     public const string ImportAlreadyCompleted = "IMPORT_ALREADY_COMPLETED";
+    public const string StoragePathRequired = "STORAGE_PATH_REQUIRED";
 }

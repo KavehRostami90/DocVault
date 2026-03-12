@@ -28,7 +28,7 @@ public sealed class StartImportJobHandler
   /// <returns>Result containing the new job id.</returns>
   public async Task<Result<Guid>> HandleAsync(StartImportJobCommand command, CancellationToken cancellationToken = default)
   {
-    var job = new ImportJob(Guid.NewGuid(), command.FileName, storagePath: string.Empty, contentType: string.Empty);
+    var job = new ImportJob(Guid.NewGuid(), command.DocumentId, command.FileName, command.StoragePath, command.ContentType);
     await _imports.AddAsync(job, cancellationToken);
     return Result<Guid>.Success(job.Id);
   }

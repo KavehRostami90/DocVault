@@ -10,6 +10,13 @@ namespace DocVault.Infrastructure.Persistence;
 /// </summary>
 internal sealed class DocVaultDbContextFactory : IDesignTimeDbContextFactory<DocVaultDbContext>
 {
+  /// <summary>
+  /// Creates a <see cref="DocVaultDbContext"/> configured for the design-time tools.
+  /// Reads the connection string from the <c>DOCVAULT_DB</c> environment variable,
+  /// falling back to a local development default.
+  /// </summary>
+  /// <param name="args">Command-line arguments passed by the EF tooling (unused).</param>
+  /// <returns>A fully configured <see cref="DocVaultDbContext"/> instance.</returns>
   public DocVaultDbContext CreateDbContext(string[] args)
   {
     var connectionString =

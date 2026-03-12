@@ -3,8 +3,15 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace DocVault.Infrastructure.Persistence.Configurations;
 
+/// <summary>
+/// EF Core fluent configuration for the <see cref="IndexingQueueEntry"/> table.
+/// Uses an <c>IDENTITY ALWAYS</c> surrogate key for FIFO ordering and adds an
+/// index on <c>EnqueuedAt</c> to support the <c>SKIP LOCKED ORDER BY</c> query.
+/// </summary>
 public sealed class IndexingQueueEntryConfiguration : IEntityTypeConfiguration<IndexingQueueEntry>
 {
+  /// <summary>Applies the <see cref="IndexingQueueEntry"/> configuration to the model builder.</summary>
+  /// <param name="builder">The entity type builder for <see cref="IndexingQueueEntry"/>.</param>
   public void Configure(EntityTypeBuilder<IndexingQueueEntry> builder)
   {
     builder.HasKey(x => x.Id);

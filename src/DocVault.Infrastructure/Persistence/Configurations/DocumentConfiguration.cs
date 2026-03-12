@@ -5,8 +5,14 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace DocVault.Infrastructure.Persistence.Configurations;
 
+/// <summary>
+/// EF Core fluent configuration for the <see cref="Document"/> aggregate root.
+/// Maps value objects, column types, and the many-to-many relationship with <see cref="Tag"/>.
+/// </summary>
 public class DocumentConfiguration : IEntityTypeConfiguration<Document>
 {
+  /// <summary>Applies the <see cref="Document"/> entity configuration to the model builder.</summary>
+  /// <param name="builder">The entity type builder for <see cref="Document"/>.</param>
   public void Configure(EntityTypeBuilder<Document> builder)
   {
     builder.HasKey(x => x.Id);

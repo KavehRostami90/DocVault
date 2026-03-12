@@ -10,15 +10,15 @@ namespace DocVault.Application.UseCases.Imports.GetImportStatus;
 /// </summary>
 public sealed class GetImportStatusHandler
 {
-  private readonly IImportJobRepository _imports;
+  private readonly IImportJobRepository _importJobsRepo;
 
   /// <summary>
   /// Creates a new handler for import status lookups.
   /// </summary>
-  /// <param name="imports">Import job repository.</param>
-  public GetImportStatusHandler(IImportJobRepository imports)
+  /// <param name="importJobsRepo">Import job repository.</param>
+  public GetImportStatusHandler(IImportJobRepository importJobsRepo)
   {
-    _imports = imports;
+    _importJobsRepo = importJobsRepo;
   }
 
   /// <summary>
@@ -29,7 +29,7 @@ public sealed class GetImportStatusHandler
   /// <returns>Result containing the job when found.</returns>
   public async Task<Result<ImportJob>> HandleAsync(GetImportStatusQuery query, CancellationToken cancellationToken = default)
   {
-    var job = await _imports.GetAsync(query.Id, cancellationToken);
+    var job = await _importJobsRepo.GetAsync(query.Id, cancellationToken).ConfigureAwait(false);
     if (job is null)
     {
       return Result<ImportJob>.Failure(Errors.NotFound);

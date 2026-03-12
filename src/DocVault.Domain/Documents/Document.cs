@@ -1,5 +1,6 @@
 using DocVault.Domain.Common;
 using DocVault.Domain.Documents.ValueObjects;
+using DocVault.Domain.Events;
 using DocVault.Domain.Primitives;
 
 namespace DocVault.Domain.Documents;
@@ -18,9 +19,11 @@ public class Document : AggregateRoot<DocumentId>
   public FileHash Hash { get; private set; }
   public string Text { get; private set; }
   public DocumentStatus Status { get; private set; }
+  /// <summary>Set when the document enters the <see cref="DocumentStatus.Failed"/> state.</summary>
+  public string? IndexingError { get; private set; }
   public IReadOnlyCollection<Tag> Tags => _tags.AsReadOnly();
 
-  private Document() : base(DocumentId.New())
+  private Document() : base(default)
   {
     Title = string.Empty;
     FileName = string.Empty;
@@ -46,9 +49,23 @@ public class Document : AggregateRoot<DocumentId>
     Touch();
   }
 
-  public void MarkIndexed() => Status = DocumentStatus.Indexed;
-  public void MarkImported() => Status = DocumentStatus.Imported;
-  public void MarkFailed() => Status = DocumentStatus.Failed;
+  public void MarkIndexed()
+  {
+    Status = DocumentStatus.Indexed;
+    RaiseDomainEvent(new DocumentIndexed(Id));
+  }
+
+  public void MarkImported()
+  {
+    Status = DocumentStatus.Imported;
+    RaiseDomainEvent(new DocumentImported(Id));
+  }
+
+  public void MarkFailed(string? error = null)
+  {
+    Status = DocumentStatus.Failed;
+    IndexingError = error;
+  }
 
   public void ReplaceTags(IEnumerable<Tag> tags)
   {
