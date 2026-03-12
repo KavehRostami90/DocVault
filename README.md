@@ -1,19 +1,117 @@
 # DocVault
 
-DocVault is a monolith-first document repository with ingestion, search, and background indexing. This repo scaffolds .NET 10 / C# 14 projects with minimal APIs, EF Core 10, and clean layering (Api, Application, Domain, Infrastructure, Tests).
+DocVault is a **monolith-first document repository** built with **.NET 10 / C# 14**. It provides document ingestion, full-text search, and background indexing through a clean-layered REST API following Clean Architecture and DDD principles.
+
+## Technology Stack
+
+| Concern | Technology |
+|---|---|
+| Runtime | .NET 10 / C# 14 |
+| Web framework | ASP.NET Core 10 – Minimal APIs |
+| ORM / database | EF Core 10 + PostgreSQL 16 |
+| Validation | FluentValidation 12 |
+| Logging | Serilog 9 (structured, JSON) |
+| API docs | OpenAPI + Scalar UI + Swagger UI |
+| Testing | xUnit 2 + Moq 4 |
+| Containerisation | Docker + Docker Compose |
 
 ## Getting Started
-- Prereqs: .NET 10 SDK preview, Docker (optional for postgres), node not required.
-- Restore: `dotnet restore`
-- Build: `dotnet build`
-- Run API: `dotnet run --project src/DocVault.Api`
 
-## Projects
-- Api: minimal API endpoints and middleware.
-- Application: use cases, pipelines, abstractions.
-- Domain: entities and events.
-- Infrastructure: EF Core, storage, search.
-- Tests: unit and integration shells.
+```bash
+# Prerequisites: .NET 10 SDK, Docker Desktop
+
+# Restore & build
+dotnet restore
+dotnet build
+
+# Run with Docker (PostgreSQL + API)
+docker compose up
+
+# Run API only (requires PostgreSQL on localhost:5432)
+export DOCVAULT_DB="Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault"
+dotnet run --project src/DocVault.Api
+
+# Run tests
+dotnet test
+```
+
+API documentation is available once running:
+- **Scalar UI**: `http://localhost:8080/scalar/v1`
+- **Swagger UI**: `http://localhost:8080/swagger`
+- **OpenAPI spec**: `http://localhost:8080/openapi/v1.json`
+
+## Project Structure
+
+```
+DocVault/
+├── src/
+│   ├── DocVault.Api/           # Minimal API endpoints, contracts, validators, middleware
+│   ├── DocVault.Application/   # Use cases (CQRS), ingestion pipeline, background worker
+│   ├── DocVault.Domain/        # Aggregates, value objects, domain events, invariants
+│   ├── DocVault.Infrastructure/ # EF Core, file storage, text extractors, embeddings
+│   └── DocVault.Shared/        # Cross-cutting utilities placeholder
+├── tests/
+│   ├── DocVault.UnitTests/     # Domain aggregates, handlers, embedding provider
+│   └── DocVault.IntegrationTests/ # API endpoint + search integration tests
+├── docs/                       # Design documents
+├── docker-compose.yml
+└── Dockerfile
+```
+
+## Architecture Overview
+
+```
+┌──────────────────────────────────────────┐
+│  DocVault.Api        (Presentation)      │
+│  Endpoints · Contracts · Validators      │
+├──────────────────────────────────────────┤
+│  DocVault.Application  (Use Cases)       │
+│  Commands · Queries · Pipeline · Worker  │
+├──────────────────────────────────────────┤
+│  DocVault.Domain    (Business Logic)     │
+│  Aggregates · ValueObjects · Events      │
+├──────────────────────────────────────────┤
+│  DocVault.Infrastructure  (I/O)          │
+│  EF Core · Storage · Extractors · AI     │
+└──────────────────────────────────────────┘
+```
+
+**Dependency rule:** outer layers depend inward; inner layers never reference outer ones.
+
+## Document Lifecycle
+
+```
+Upload → ImportDocumentHandler
+           ├─ SHA-256 hash
+           ├─ Store binary (IFileStorage)
+           ├─ Create Document (Status: Pending → Imported)
+           ├─ Create ImportJob (Status: Pending)
+           └─ Enqueue IndexingWorkItem
+
+Background → IndexingWorker
+               ├─ ImportJob → InProgress
+               ├─ IngestionPipeline.RunAsync()
+               │    ├─ FileReadStage
+               │    ├─ TextExtractStage
+               │    ├─ EmbeddingStage
+               │    └─ IndexStage
+               ├─ Document.AttachText(extractedText)
+               ├─ Document → Indexed  (+ DocumentIndexed event)
+               └─ ImportJob → Completed / Failed
+```
+
+## Development vs Production Stubs
+
+| Component | Development | Production path |
+|---|---|---|
+| Embeddings | `FakeEmbeddingProvider` — FNV-1a feature hashing, 128-dim L2-normalised | OpenAI / Azure OpenAI / local ONNX |
+| File storage | `LocalFileStorage` — writes `{id}.bin` to `/app/storage` | Azure Blob / AWS S3 / MinIO |
+| Work queue | `ChannelWorkQueue<T>` — in-memory channel | `PostgresWorkQueue` — SKIP LOCKED |
+| Index stage | `IndexStage` — virtual no-op base class | Subclass with PostgreSQL `tsvector` / Azure AI Search |
 
 ## Docs
-- See docs/system-design.md, docs/api.md, docs/data-model.md for design notes.
+
+- [System Design](docs/system-design.md)
+- [API Reference](docs/api.md)
+- [Data Model](docs/data-model.md)
+- [Production Readiness Plan](docs/production-readiness-plan.md)

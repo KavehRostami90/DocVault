@@ -1,18 +1,222 @@
 # DocVault Production Readiness Plan
 
 ## Overview
-This document outlines the necessary changes to move DocVault from development-ready to production-ready infrastructure.
+This document tracks the production readiness of DocVault, recording what is already implemented, what is a development stub, and the recommended path to a production-grade deployment.
 
-## Current State Analysis
+---
 
-### ✅ What's Ready for Production
-- **Clean Architecture**: Well-structured layers (Domain, Application, Infrastructure, API)
-- **Input Validation**: Comprehensive FluentValidation rules with domain invariants
-- **Error Handling**: GlobalExceptionHandler with proper problem details
-- **Logging**: Serilog with proper structured logging and enrichers
-- **Testing**: Good test coverage with integration tests
+## Current State
 
-### 🔄 What Needs Production Implementation
+### ✅ Production-Ready Components
+
+- **Clean Architecture** — strict layer separation, dependency inversion throughout
+- **Domain invariants** — all business rules enforced in `Document` and `ImportJob` aggregates; `DomainException` on violation
+- **Input validation** — FluentValidation with domain-level `ValidationConstants`; covers file size, content type, path traversal, tag limits, query length
+- **Error handling** — `GlobalExceptionHandler` translates exceptions to RFC 7807 `ProblemDetails`
+- **Structured logging** — Serilog 9 with source-generated `[LoggerMessage]` throughout; JSON output
+- **Correlation IDs** — `CorrelationIdMiddleware` injects `X-Correlation-Id` on every request
+- **Crash recovery** — `IndexingWorker` re-enqueues `Pending`/`InProgress` jobs on startup
+- **Domain events** — `DocumentImported` and `DocumentIndexed` raised and dispatched in-process
+- **EF Core migrations** — all schema changes tracked and applied via `dotnet ef database update`
+- **Integration tests** — 53 tests covering upload, search, validation, pagination, and scoring
+- **Unit tests** — 67 tests covering domain aggregates, handlers, embedding provider, and worker
+
+### ⚠️ Development Stubs (swap before going live)
+
+| Component | Current implementation | Recommended production replacement |
+|---|---|---|
+| Embeddings | `FakeEmbeddingProvider` — FNV-1a feature hashing, 128-dim L2-normalised | OpenAI `text-embedding-3-large`, Azure OpenAI, or local ONNX model |
+| File storage | `LocalFileStorage` — writes `{id}.bin` to `/app/storage` | Azure Blob Storage, AWS S3, or MinIO |
+| Work queue | `ChannelWorkQueue<T>` — in-memory, lost on restart | `PostgresWorkQueue` (already implemented) — enables multi-instance deployments |
+| Search index | `IndexStage` — virtual no-op base class | Subclass with PostgreSQL `tsvector`/`tsquery`, Azure AI Search, or Elasticsearch |
+
+---
+
+## Implementation Phases
+
+### Phase 1 — Core Production Infrastructure (Critical)
+
+#### 1.1 Persistent Work Queue
+Swap `ChannelWorkQueue<T>` for the already-implemented `PostgresWorkQueue`:
+
+```csharp
+// src/DocVault.Infrastructure/DependencyInjection.cs
+// Change:
+services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
+// To:
+services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
+```
+
+#### 1.2 Production File Storage
+Implement `AzureBlobFileStorage : IFileStorage`:
+
+```csharp
+// src/DocVault.Infrastructure/Storage/AzureBlobFileStorage.cs
+public sealed class AzureBlobFileStorage : IFileStorage
+{
+    // BlobServiceClient injected via DI
+    // WriteAsync  → BlobClient.UploadAsync
+    // ReadAsync   → BlobClient.DownloadStreamingAsync
+    // DeleteAsync → BlobClient.DeleteIfExistsAsync
+}
+```
+
+Configuration:
+```json
+{
+  "Storage": {
+    "Provider": "AzureBlob",
+    "AzureBlob": {
+      "ConnectionString": "#{AZURE_STORAGE_CONNECTION_STRING}#",
+      "ContainerName": "docvault-documents"
+    }
+  }
+}
+```
+
+#### 1.3 Database Connection Pooling
+Add PgBouncer or enable Npgsql connection multiplexing:
+
+```json
+{
+  "ConnectionStrings": {
+    "Default": "Host=…;Port=5432;Database=docvault;Username=docvault;Password=…;Pooling=true;MinPoolSize=5;MaxPoolSize=100;Multiplexing=true"
+  }
+}
+```
+
+#### 1.4 Health Checks
+```csharp
+services.AddHealthChecks()
+    .AddNpgSql(connectionString, name: "postgres")
+    .AddCheck<FileStorageHealthCheck>("storage");
+```
+
+---
+
+### Phase 2 — Full-Text Search
+
+Subclass `IndexStage` to write to a real search index. Example using PostgreSQL `tsvector`:
+
+```csharp
+// src/DocVault.Infrastructure/Search/PostgresFullTextIndexStage.cs
+public sealed class PostgresFullTextIndexStage : IndexStage
+{
+    public override async Task IndexAsync(string text, float[] vector, CancellationToken ct)
+    {
+        // UPDATE Documents SET SearchVector = to_tsvector('english', @text) WHERE Id = @id
+    }
+}
+```
+
+Update `EfDocumentRepository.SearchAsync` to use `tsvector` queries instead of `LIKE`.
+
+---
+
+### Phase 3 — Real Embeddings
+
+Implement `OpenAIEmbeddingProvider : IEmbeddingProvider`:
+
+```csharp
+// src/DocVault.Infrastructure/Embeddings/OpenAIEmbeddingProvider.cs
+public sealed class OpenAIEmbeddingProvider : IEmbeddingProvider
+{
+    // POST https://api.openai.com/v1/embeddings
+    // Model: text-embedding-3-large (3072-dim) or text-embedding-ada-002 (1536-dim)
+}
+```
+
+Configuration:
+```json
+{
+  "AI": {
+    "Provider": "OpenAI",
+    "OpenAI": {
+      "ApiKey": "#{OPENAI_API_KEY}#",
+      "Model": "text-embedding-3-large"
+    }
+  }
+}
+```
+
+> **Note:** The embedding dimension in `IndexingQueueEntries` and any vector column must be updated to match the chosen model.
+
+---
+
+### Phase 4 — Security & Scalability
+
+#### Authentication
+```csharp
+services.AddAuthentication("Bearer")
+    .AddJwtBearer(options =>
+    {
+        options.Authority = configuration["Auth:Authority"];
+        options.Audience  = configuration["Auth:Audience"];
+    });
+```
+
+#### Rate Limiting
+```csharp
+services.AddRateLimiter(options =>
+    options.AddFixedWindowLimiter("upload", o =>
+    {
+        o.PermitLimit = 10;
+        o.Window      = TimeSpan.FromMinutes(1);
+    }));
+```
+
+#### Secrets Management
+Use Azure Key Vault or AWS Secrets Manager; never commit credentials.
+
+```bash
+export DOCVAULT_DB="Host=…"
+export DOCVAULT_STORAGE_KEY="…"
+export DOCVAULT_AI_KEY="…"
+```
+
+---
+
+## Deployment Checklist
+
+- [ ] Switch `IWorkQueue<T>` to `PostgresWorkQueue`
+- [ ] Implement and register production `IFileStorage`
+- [ ] Implement and register production `IEmbeddingProvider`
+- [ ] Subclass `IndexStage` with real index writes
+- [ ] Update `SearchAsync` in `EfDocumentRepository` to use full-text search
+- [ ] Configure database connection string via environment variable
+- [ ] Apply all EF migrations to production database
+- [ ] Add health checks for DB and storage
+- [ ] Configure TLS / reverse proxy
+- [ ] Set up structured log sink (Seq, Application Insights, or Datadog)
+- [ ] Set up alerting on `DocumentStatus.Failed` spike
+- [ ] Implement authentication/authorisation
+- [ ] Add rate limiting on upload endpoints
+- [ ] Run `dotnet publish -c Release` and verify Docker image builds cleanly
+- [ ] Load test the ingestion pipeline under concurrent uploads
+
+---
+
+## Cost Estimates (Medium Deployment)
+
+### Azure
+| Service | Est. monthly |
+|---|---|
+| App Service (P2v3) | $150–250 |
+| Azure Database for PostgreSQL Flexible | $150–400 |
+| Blob Storage (Hot tier, 100 GB) | $5–20 |
+| Azure AI Search (Basic) | $75–250 |
+| OpenAI Embeddings API | variable (per token) |
+| **Total** | **~$400–950 / month** |
+
+### AWS
+| Service | Est. monthly |
+|---|---|
+| ECS Fargate | $100–200 |
+| RDS PostgreSQL (db.t3.medium) | $100–300 |
+| S3 (Standard, 100 GB) | $3–10 |
+| OpenSearch Service (t3.small) | $50–150 |
+| OpenAI Embeddings API | variable (per token) |
+| **Total** | **~$300–700 / month** |
 
 ## 1. Search Infrastructure
 
