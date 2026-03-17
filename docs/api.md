@@ -162,11 +162,77 @@ List all tag names in use across the corpus.
 
 ## Health
 
+Health endpoints do **not** appear in Swagger/OpenAPI — call them directly.
+
+---
+
 ### `GET /health/live`
-Liveness probe. Returns `200 OK` if the process is running.
+Liveness probe. Returns `200 OK` as long as the process is running. No dependency checks are performed, making it safe to use as a Kubernetes `livenessProbe` or Docker HEALTHCHECK target.
+
+**Response `200 OK`:**
+```json
+{
+  "status": "Healthy",
+  "totalDuration": "00:00:00.000",
+  "checks": {}
+}
+```
+
+---
 
 ### `GET /health/ready`
-Readiness probe. Returns `200 OK` if the database is reachable.
+Readiness probe. Runs all checks tagged `ready` — currently **database** and **storage**. Returns `503 Service Unavailable` if any check fails. Use this as a Kubernetes `readinessProbe` to stop traffic reaching the pod until all dependencies are up.
+
+**Response `200 OK`** (all dependencies healthy):
+```json
+{
+  "status": "Healthy",
+  "totalDuration": "00:00:00.012",
+  "checks": {
+    "database": {
+      "status": "Healthy",
+      "description": null,
+      "duration": "00:00:00.011",
+      "error": null
+    },
+    "storage": {
+      "status": "Healthy",
+      "description": null,
+      "duration": "00:00:00.001",
+      "error": null
+    }
+  }
+}
+```
+
+**Response `503 Service Unavailable`** (a dependency is down):
+```json
+{
+  "status": "Unhealthy",
+  "totalDuration": "00:00:05.003",
+  "checks": {
+    "database": {
+      "status": "Unhealthy",
+      "description": null,
+      "duration": "00:00:05.002",
+      "error": "Connection refused"
+    },
+    "storage": {
+      "status": "Healthy",
+      "description": null,
+      "duration": "00:00:00.001",
+      "error": null
+    }
+  }
+}
+```
+
+#### Dependency checks
+
+| Check | Tag | What it does |
+|---|---|---|
+| `database` | `ready` | Calls `CanConnectAsync` on the EF Core `DocVaultDbContext` |
+| `storage` | `ready` | Writes a 1-byte probe file to `IFileStorage` and immediately deletes it |
 
 ---
 

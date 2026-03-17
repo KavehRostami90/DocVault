@@ -109,6 +109,32 @@ Background → IndexingWorker
 | Work queue | `ChannelWorkQueue<T>` — in-memory channel | `PostgresWorkQueue` — SKIP LOCKED |
 | Index stage | `IndexStage` — virtual no-op base class | Subclass with PostgreSQL `tsvector` / Azure AI Search |
 
+## Health Checks
+
+Two dedicated probes are available (not listed in Swagger — call directly):
+
+| Endpoint | Purpose | Checks performed |
+|---|---|---|
+| `GET /health/live` | Liveness — is the process alive? | None (always 200 if running) |
+| `GET /health/ready` | Readiness — are dependencies up? | Database (`CanConnectAsync`) + Storage (write/delete probe) |
+
+Both return a structured JSON body:
+
+```json
+{
+  "status": "Healthy",
+  "totalDuration": "00:00:00.012",
+  "checks": {
+    "database": { "status": "Healthy", "duration": "00:00:00.011", "error": null },
+    "storage":  { "status": "Healthy", "duration": "00:00:00.001", "error": null }
+  }
+}
+```
+
+`/health/ready` returns `503 Service Unavailable` when any check fails.
+
+See [docs/api.md](docs/api.md#health) for the full response schema.
+
 ## Docs
 
 - [System Design](docs/system-design.md)

@@ -1,5 +1,6 @@
 using DocVault.Application;
 using DocVault.Infrastructure;
+using DocVault.Infrastructure.Health;
 using FluentValidation;
 using DocVault.Api.Validation;
 using DocVault.Api.Exceptions;
@@ -25,6 +26,11 @@ public static class DependencyInjection
     services.AddExceptionHandler<GlobalExceptionHandler>();
     services.AddProblemDetails();
     services.AddValidatorsFromAssemblyContaining<DocumentCreateRequestValidator>();
+
+    services.AddHealthChecks()
+      .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
+      .AddCheck<StorageHealthCheck>("storage", tags: ["ready"]);
+
     return services;
   }
 }
