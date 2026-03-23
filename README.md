@@ -27,12 +27,25 @@ dotnet build
 # Run with Docker (PostgreSQL + API)
 docker compose up
 
-# Run API only (requires PostgreSQL on localhost:5432)
-export DOCVAULT_DB="Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault"
-dotnet run --project src/DocVault.Api
-
 # Run tests
 dotnet test
+```
+
+**Running locally without Docker** requires a PostgreSQL 16 instance and a connection string.
+Create `src/DocVault.Api/appsettings.Development.Local.json` (gitignored) with:
+
+```json
+{
+  "ConnectionStrings": {
+    "Database": "Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault"
+  }
+}
+```
+
+Then run:
+
+```bash
+dotnet run --project src/DocVault.Api
 ```
 
 API documentation is available once running:

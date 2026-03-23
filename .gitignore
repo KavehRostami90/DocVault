@@ -31,3 +31,10 @@ appsettings.*.Local.json
 # Docker local overrides
 docker-compose.override.yml
 
+# Azurite local storage (Azure Storage emulator)
+__blobstorage__/
+__queuestorage__/
+# Azurite local storage (Azure Storage emulator)
+__blobstorage__/
+__queuestorage__/
+
