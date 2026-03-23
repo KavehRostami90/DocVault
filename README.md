@@ -1,5 +1,7 @@
 # DocVault
 
+[![CI](https://github.com/KavehRostami90/DocVault/actions/workflows/ci.yml/badge.svg)](https://github.com/KavehRostami90/DocVault/actions/workflows/ci.yml)
+
 DocVault is a **monolith-first document repository** built with **.NET 10 / C# 14**. It provides document ingestion, full-text search, and background indexing through a clean-layered REST API following Clean Architecture and DDD principles.
 
 ## Technology Stack
