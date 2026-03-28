@@ -62,11 +62,11 @@ Orchestrates use cases. Depends on Domain; no web or EF dependencies.
 
 | Route group | Endpoints |
 |---|---|
-| Documents | `POST /documents/import`, `GET /documents`, `GET /documents/{id}`, `PUT /documents/{id}`, `DELETE /documents/{id}` |
-| Search | `POST /search/documents` |
-| Tags | `GET /tags` |
-| Imports | `POST /imports`, `GET /imports/{jobId}` |
-| Health | `GET /health/live`, `GET /health/ready` |
+| Documents | `POST /api/v1/documents/import`, `GET /api/v1/documents`, `GET /api/v1/documents/{id}`, `PUT /api/v1/documents/{id}`, `DELETE /api/v1/documents/{id}` |
+| Search | `POST /api/v1/search/documents` |
+| Tags | `GET /api/v1/tags` |
+| Imports | `POST /api/v1/imports`, `GET /api/v1/imports/{jobId}` |
+| Health | `GET /health/live`, `GET /health/ready` (unversioned) |
 
 **Middleware pipeline (order matters):**
 1. Serilog request logging + context enrichment

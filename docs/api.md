@@ -11,9 +11,23 @@ Interactive docs:
 
 ---
 
+## API Versioning
+
+All business endpoints are versioned via the URL segment:
+
+```
+/api/v{version}/...
+```
+
+The current version is **v1**. The server returns an `api-supported-versions` response header listing all available versions.
+
+Health endpoints (`/health/live`, `/health/ready`) are infrastructure probes and are **not** versioned.
+
+---
+
 ## Documents
 
-### `POST /documents/import`
+### `POST /api/v1/documents/import`
 Upload a document for storage and background indexing.
 
 **Content-Type:** `multipart/form-data`
@@ -28,13 +42,13 @@ Upload a document for storage and background indexing.
 ```json
 { "id": "<uuid>", "jobId": "<uuid>" }
 ```
-`Location` header points to `GET /documents/{id}`.
+`Location` header points to `GET /api/v1/documents/{id}`.
 
 The document is immediately stored and its `Status` is set to `Imported`. Background indexing begins asynchronously.
 
 ---
 
-### `GET /documents`
+### `GET /api/v1/documents`
 List documents with pagination, filtering, and sorting.
 
 | Query param | Type | Default | Notes |
@@ -50,7 +64,7 @@ List documents with pagination, filtering, and sorting.
 
 ---
 
-### `GET /documents/{id}`
+### `GET /api/v1/documents/{id}`
 Get full document details including extracted text and tags.
 
 **Response `200 OK`:** `DocumentReadResponse`  
@@ -58,7 +72,7 @@ Get full document details including extracted text and tags.
 
 ---
 
-### `PUT /documents/{id}`
+### `PUT /api/v1/documents/{id}`
 Update a document's tag list.
 
 **Body:**
@@ -70,7 +84,7 @@ Update a document's tag list.
 
 ---
 
-### `DELETE /documents/{id}`
+### `DELETE /api/v1/documents/{id}`
 Permanently delete a document and its stored binary.
 
 **Response `204 No Content`**
@@ -79,7 +93,7 @@ Permanently delete a document and its stored binary.
 
 ## Search
 
-### `POST /search/documents`
+### `POST /api/v1/search/documents`
 Full-text keyword search across document titles and extracted text.
 
 **Body:**
@@ -115,7 +129,7 @@ Results are ordered by relevance score (descending). Title matches score higher 
 
 ## Imports
 
-### `POST /imports`
+### `POST /api/v1/imports`
 Start an import job for an already-stored document (used internally or via admin tooling).
 
 **Body:**
@@ -132,7 +146,7 @@ Start an import job for an already-stored document (used internally or via admin
 
 ---
 
-### `GET /imports/{jobId}`
+### `GET /api/v1/imports/{jobId}`
 Poll the status of an import job.
 
 **Response `200 OK`:**
@@ -153,7 +167,7 @@ Possible `status` values: `Pending`, `InProgress`, `Completed`, `Failed`.
 
 ## Tags
 
-### `GET /tags`
+### `GET /api/v1/tags`
 List all tag names in use across the corpus.
 
 **Response `200 OK`:** `string[]`
