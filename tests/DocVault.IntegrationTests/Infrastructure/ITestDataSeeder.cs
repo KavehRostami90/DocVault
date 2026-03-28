@@ -18,3 +18,4 @@ public interface IDocumentTestDataSeeder : ITestDataSeeder
     Task<Guid> SeedDocumentAsync(string title, string content, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Guid>> SeedMultipleDocumentsAsync(IEnumerable<(string Title, string Content)> documents, CancellationToken cancellationToken = default);
 }
+

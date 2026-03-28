@@ -118,3 +118,4 @@ public sealed class FakeEmbeddingProviderTests
         Assert.Equal(128, vector.Length);
     }
 }
+

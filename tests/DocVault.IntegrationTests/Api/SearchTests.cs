@@ -194,7 +194,7 @@ public sealed class SearchTests : BaseIntegrationTest
   [Fact]
   public async Task Search_EmptyQuery_Returns400WithValidationError()
   {
-    var response = await HttpClient.PostAsJsonAsync("/search/documents", new { query = "", page = 1, size = 10 });
+    var response = await HttpClient.PostAsJsonAsync("/api/v1/search/documents", new { query = "", page = 1, size = 10 });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -209,7 +209,7 @@ public sealed class SearchTests : BaseIntegrationTest
   public async Task Search_QueryExceedsMaxLength_Returns400()
   {
     var longQuery = new string('a', 513);
-    var response = await HttpClient.PostAsJsonAsync("/search/documents", new { query = longQuery, page = 1, size = 10 });
+    var response = await HttpClient.PostAsJsonAsync("/api/v1/search/documents", new { query = longQuery, page = 1, size = 10 });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
   }
@@ -217,7 +217,7 @@ public sealed class SearchTests : BaseIntegrationTest
   [Fact]
   public async Task Search_InvalidPage_Returns400()
   {
-    var response = await HttpClient.PostAsJsonAsync("/search/documents", new { query = "test", page = 0, size = 10 });
+    var response = await HttpClient.PostAsJsonAsync("/api/v1/search/documents", new { query = "test", page = 0, size = 10 });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
   }
@@ -228,7 +228,7 @@ public sealed class SearchTests : BaseIntegrationTest
 
   private async Task<SearchPage> PostSearchAsync(string query, int page = 1, int size = 10)
   {
-    var response = await HttpClient.PostAsJsonAsync("/search/documents",
+    var response = await HttpClient.PostAsJsonAsync("/api/v1/search/documents",
       new { query, page, size });
 
     response.EnsureSuccessStatusCode();
@@ -274,3 +274,4 @@ public sealed class SearchTests : BaseIntegrationTest
     public double Score   { get; init; }
   }
 }
+

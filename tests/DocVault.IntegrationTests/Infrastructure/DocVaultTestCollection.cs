@@ -14,3 +14,4 @@ public class DocVaultTestCollection : ICollectionFixture<DocVaultFactory>
     // to be the place to apply [CollectionDefinition] and all the
     // ICollectionFixture<> interfaces.
 }
+

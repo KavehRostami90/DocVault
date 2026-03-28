@@ -21,3 +21,4 @@ public interface IDocumentTestAssertions
     void AssertDocumentHasTitle(Guid documentId, string expectedTitle);
     void AssertDocumentHasContent(Guid documentId, string expectedContent);
 }
+

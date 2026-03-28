@@ -79,3 +79,4 @@ public sealed class SearchResponseTests : BaseIntegrationTest
         Assert.True(page.Size > 0);
     }
 }
+

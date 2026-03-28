@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using DocVault.Application;
 using DocVault.Infrastructure;
 using DocVault.Infrastructure.Health;
@@ -20,9 +21,18 @@ public static class DependencyInjection
   {
     services.AddApplication();
     services.AddInfrastructure(configuration);
+
+    services.AddApiVersioning(options =>
+    {
+      options.DefaultApiVersion = new ApiVersion(1, 0);
+      options.AssumeDefaultVersionWhenUnspecified = true;
+      options.ReportApiVersions = true;
+      options.ApiVersionReader = new UrlSegmentApiVersionReader();
+    });
+
     services.AddEndpointsApiExplorer();
-    // Built-in OpenAPI in ASP.NET Core 10 does not expose XML comment inclusion; rely on summaries/descriptions on endpoints/DTOs.
-    services.AddOpenApi();
+    // Named v1 OpenAPI document; served at /openapi/v1.json
+    services.AddOpenApi("v1");
     services.AddExceptionHandler<GlobalExceptionHandler>();
     services.AddProblemDetails();
     services.AddValidatorsFromAssemblyContaining<DocumentCreateRequestValidator>();

@@ -50,3 +50,4 @@ public sealed class DocumentTestBuilder
 
     public static DocumentTestBuilder New() => new();
 }
+

@@ -77,3 +77,4 @@ public sealed class SearchPaginationTests : BaseIntegrationTest
         Assert.Equal(5, page.Items.Count);
     }
 }
+

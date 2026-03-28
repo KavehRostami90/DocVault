@@ -88,7 +88,7 @@ public sealed class DocumentUploadValidationTests : BaseIntegrationTest
     public async Task Post_JsonBody_Returns400MustBeMultipart()
     {
         // Act
-        var response = await HttpClient.PostAsJsonAsync("/documents", 
+        var response = await HttpClient.PostAsJsonAsync("/api/v1/documents", 
             new { title = "test", fileName = "test.pdf" });
 
         // Assert
@@ -125,3 +125,4 @@ public sealed class DocumentUploadValidationTests : BaseIntegrationTest
             $"Expected '{expectedField}' validation error. Got: {string.Join(", ", errors.Select(x => x.Key))}");
     }
 }
+

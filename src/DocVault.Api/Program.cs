@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using DocVault.Api.Composition;
 using DocVault.Api.Endpoints;
 using DocVault.Api.Middleware;
@@ -68,10 +69,21 @@ try
 
   app.MapOpenApi();
   app.MapScalarApiReference();
-  app.MapDocumentsEndpoints();
-  app.MapSearchEndpoints();
-  app.MapTagsEndpoints();
-  app.MapImportsEndpoints();
+
+  // All versioned API endpoints live under /api/v{n}
+  // Health endpoints are infrastructure concerns and intentionally unversioned
+  var apiVersionSet = app.NewApiVersionSet()
+    .HasApiVersion(new ApiVersion(1, 0))
+    .ReportApiVersions()
+    .Build();
+
+  var v1 = app.MapGroup("/api/v{version:apiVersion}")
+    .WithApiVersionSet(apiVersionSet);
+
+  v1.MapDocumentsEndpoints();
+  v1.MapSearchEndpoints();
+  v1.MapTagsEndpoints();
+  v1.MapImportsEndpoints();
   app.MapHealthEndpoints();
 
   app.Run();

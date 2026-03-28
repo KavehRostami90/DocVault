@@ -29,7 +29,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   [Fact]
   public async Task Post_ValidPdf_Returns201WithId()
   {
-    var response = await HttpClient.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/api/v1/documents", BuildForm(
       file: (PDF_BYTES, "report.pdf", "application/pdf"),
       title: "Quarterly Report",
       tags: ["finance", "q4"]));
@@ -45,7 +45,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   [Fact]
   public async Task Post_ValidTxt_Returns201()
   {
-    var response = await HttpClient.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/api/v1/documents", BuildForm(
       file: (TXT_BYTES, "notes.txt", "text/plain"),
       title: "Meeting notes"));
 
@@ -55,7 +55,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   [Fact]
   public async Task Post_NoTags_Returns201()
   {
-    var response = await HttpClient.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/api/v1/documents", BuildForm(
       file: (TXT_BYTES, "plain.txt", "text/plain"),
       title: "No tags doc"));
 
@@ -72,7 +72,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent("Some title"), "title");
 
-    var response = await HttpClient.PostAsync("/documents", form);
+    var response = await HttpClient.PostAsync("/api/v1/documents", form);
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     var body = await ParseJsonAsync(response);
@@ -82,7 +82,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   [Fact]
   public async Task Post_EmptyTitle_Returns400WithError()
   {
-    var response = await HttpClient.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/api/v1/documents", BuildForm(
       file: (TXT_BYTES, "file.txt", "text/plain"),
       title: ""));
 
@@ -94,7 +94,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   [Fact]
   public async Task Post_UnsupportedContentType_Returns400WithError()
   {
-    var response = await HttpClient.PostAsync("/documents", BuildForm(
+    var response = await HttpClient.PostAsync("/api/v1/documents", BuildForm(
       file: ([0xFF, 0xD8], "photo.jpg", "image/jpeg"),
       title: "A photo"));
 
@@ -110,7 +110,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   [Fact]
   public async Task Post_JsonBody_Returns400MustBeMultipart()
   {
-    var response = await HttpClient.PostAsJsonAsync("/documents", new { title = "test", fileName = "test.pdf" });
+    var response = await HttpClient.PostAsJsonAsync("/api/v1/documents", new { title = "test", fileName = "test.pdf" });
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
   }
@@ -125,7 +125,7 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
     using var form = new MultipartFormDataContent();
     form.Add(new StringContent(""), "title");
 
-    var response = await HttpClient.PostAsync("/documents", form);
+    var response = await HttpClient.PostAsync("/api/v1/documents", form);
     var body = await ParseJsonAsync(response);
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -174,3 +174,4 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
       $"Expected validation error for '{propertyName}'. Got: {errors}");
   }
 }
+

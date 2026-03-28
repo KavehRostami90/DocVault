@@ -140,3 +140,4 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
     }
   }
 }
+

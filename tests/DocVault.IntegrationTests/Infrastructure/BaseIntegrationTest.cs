@@ -59,3 +59,4 @@ public abstract class BaseIntegrationTest : IAsyncLifetime
         return scope.ServiceProvider.GetRequiredService<T>();
     }
 }
+

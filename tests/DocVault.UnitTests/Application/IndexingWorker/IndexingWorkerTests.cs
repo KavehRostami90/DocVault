@@ -284,3 +284,4 @@ public sealed class IndexingWorkerTests
         queue.Verify(q => q.Enqueue(It.IsAny<IndexingWorkItem>()), Times.Never);
     }
 }
+

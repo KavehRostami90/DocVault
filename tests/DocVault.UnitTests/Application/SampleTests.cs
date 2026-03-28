@@ -10,3 +10,4 @@ public class SampleTests
     Assert.True(true);
   }
 }
+

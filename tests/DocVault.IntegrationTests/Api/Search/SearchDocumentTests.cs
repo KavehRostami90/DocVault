@@ -87,3 +87,4 @@ public sealed class SearchDocumentTests : BaseIntegrationTest
         Assert.Contains(_textOnlyDocumentId, returnedIds);
     }
 }
+

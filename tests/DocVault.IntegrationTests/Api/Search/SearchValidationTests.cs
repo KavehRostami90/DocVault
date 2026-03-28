@@ -114,3 +114,4 @@ public sealed class SearchValidationTests : BaseIntegrationTest
                ?? throw new InvalidOperationException($"Could not parse body: {content}");
     }
 }
+

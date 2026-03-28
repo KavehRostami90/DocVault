@@ -18,7 +18,7 @@ public sealed class SearchTestHelpers
 
     public async Task<SearchPage> ExecuteSearchAsync(string query, int page = 1, int size = 10, CancellationToken cancellationToken = default)
     {
-        var response = await _httpClient.PostAsJsonAsync("/search/documents",
+        var response = await _httpClient.PostAsJsonAsync("/api/v1/search/documents",
             new { query, page, size }, cancellationToken);
 
         response.EnsureSuccessStatusCode();
@@ -31,7 +31,7 @@ public sealed class SearchTestHelpers
 
     public async Task<HttpResponseMessage> ExecuteSearchRawAsync(object request, CancellationToken cancellationToken = default)
     {
-        return await _httpClient.PostAsJsonAsync("/search/documents", request, cancellationToken);
+        return await _httpClient.PostAsJsonAsync("/api/v1/search/documents", request, cancellationToken);
     }
 }
 
@@ -53,3 +53,4 @@ public sealed class SearchItem
     public string Snippet { get; init; } = string.Empty;
     public double Score { get; init; }
 }
+

@@ -45,3 +45,4 @@ public sealed class SearchTestAssertions : ISearchTestAssertions
         });
     }
 }
+

@@ -22,7 +22,7 @@ public sealed class DocumentUploadTestHelpers
         CancellationToken cancellationToken = default)
     {
         using var form = BuildMultipartForm(file, title, tags);
-        return await _httpClient.PostAsync("/documents", form, cancellationToken);
+        return await _httpClient.PostAsync("/api/v1/documents", form, cancellationToken);
     }
 
     public async Task<HttpResponseMessage> UploadDocumentWithMissingFieldAsync(
@@ -44,7 +44,7 @@ public sealed class DocumentUploadTestHelpers
             form.Add(fileContent, "file", file.Value.FileName);
         }
 
-        return await _httpClient.PostAsync("/documents", form, cancellationToken);
+        return await _httpClient.PostAsync("/api/v1/documents", form, cancellationToken);
     }
 
     private static MultipartFormDataContent BuildMultipartForm(
@@ -67,3 +67,4 @@ public sealed class DocumentUploadTestHelpers
         return form;
     }
 }
+
