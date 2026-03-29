@@ -15,10 +15,6 @@ param containerImage string
 @secure()
 param databaseConnectionString string
 
-@description('GitHub token used to pull the image from ghcr.io (passed from GITHUB_TOKEN secret).')
-@secure()
-param ghcrToken string
-
 @description('OpenAI API key. Leave empty to use FakeEmbeddingProvider.')
 @secure()
 param openAiApiKey string = ''
@@ -64,18 +60,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
       }
-      // Registry credentials — allows pulling private ghcr.io images
-      registries: [
-        {
-          server: 'ghcr.io'
-          username: 'x-access-token'
-          passwordSecretRef: 'ghcr-token'
-        }
-      ]
       secrets: [
         { name: 'db-connection-string', value: databaseConnectionString }
         { name: 'openai-api-key',        value: openAiApiKey }
-        { name: 'ghcr-token',            value: ghcrToken }
       ]
     }
     template: {

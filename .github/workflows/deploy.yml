@@ -77,7 +77,6 @@ jobs:
     name: Deploy to Container Apps
     runs-on: ubuntu-latest
     needs: build-push
-    environment: production
 
     permissions:
       id-token: write   # required for OIDC login
@@ -105,5 +104,4 @@ jobs:
               appName=docvault \
               containerImage=${{ needs.build-push.outputs.image }} \
               databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
-              openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
-              ghcrToken="${{ secrets.GITHUB_TOKEN }}"
+              openAiApiKey="${{ secrets.OPENAI_API_KEY }}"
