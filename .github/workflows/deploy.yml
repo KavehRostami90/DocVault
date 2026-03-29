@@ -94,7 +94,32 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy Bicep infra
+      - name: Deploy environment infrastructure
+        run: |
+          az deployment group create \
+            --name docvault-env-${{ github.run_id }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file infra/env.bicep \
+            --parameters appName=docvault
+
+      - name: Wait for Container Apps environment to be ready
+        run: |
+          echo "Waiting for Container Apps environment to reach Succeeded state..."
+          for i in $(seq 1 18); do
+            STATE=$(az containerapp env show \
+              --name docvault-env \
+              --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+              --query "properties.provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+            echo "Attempt $i: state = $STATE"
+            if [ "$STATE" = "Succeeded" ]; then
+              echo "Environment is ready."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for environment." && exit 1
+
+      - name: Deploy Container App
         run: |
           az deployment group create \
             --name docvault-${{ github.run_id }} \

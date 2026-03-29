@@ -19,32 +19,27 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
-// ── Log Analytics ──────────────────────────────────────────────────────────
+// Conditionally include OpenAI secret only when a key is provided
+var useOpenAi = !empty(openAiApiKey)
+var baseSecrets = [
+  { name: 'db-connection-string', value: databaseConnectionString }
+]
+var openAiSecret = useOpenAi ? [{ name: 'openai-api-key', value: openAiApiKey }] : []
+var allSecrets = concat(baseSecrets, openAiSecret)
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: '${appName}-logs'
-  location: location
-  properties: {
-    sku: { name: 'PerGB2018' }
-    retentionInDays: 30
-    features: { enableLogAccessUsingOnlyResourcePermissions: true }
-  }
-}
+var baseEnvVars = [
+  { name: 'ASPNETCORE_ENVIRONMENT',     value: 'Production' }
+  { name: 'ConnectionStrings__Database', secretRef: 'db-connection-string' }
+  { name: 'OpenAI__Model',              value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',         value: '1536' }
+]
+var openAiEnvVar = useOpenAi ? [{ name: 'OpenAI__ApiKey', secretRef: 'openai-api-key' }] : []
+var allEnvVars = concat(baseEnvVars, openAiEnvVar)
 
-// ── Container Apps Environment ──────────────────────────────────────────────
+// ── Existing Container Apps Environment (pre-provisioned by env.bicep) ──────
 
-resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
+resource env 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: '${appName}-env'
-  location: location
-  properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
-  }
 }
 
 // ── Container App ───────────────────────────────────────────────────────────
@@ -60,10 +55,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
       }
-      secrets: [
-        { name: 'db-connection-string', value: databaseConnectionString }
-        { name: 'openai-api-key',        value: openAiApiKey }
-      ]
+      secrets: allSecrets
     }
     template: {
       containers: [
@@ -75,13 +67,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
-            { name: 'ASPNETCORE_ENVIRONMENT',        value: 'Production' }
-            { name: 'ConnectionStrings__Database',    secretRef: 'db-connection-string' }
-            { name: 'OpenAI__ApiKey',                secretRef: 'openai-api-key' }
-            { name: 'OpenAI__Model',                 value: 'text-embedding-3-small' }
-            { name: 'OpenAI__Dimensions',            value: '1536' }
-          ]
+          env: allEnvVars
           probes: [
             {
               type: 'Liveness'
