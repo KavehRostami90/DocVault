@@ -128,5 +128,4 @@ jobs:
             --parameters \
               appName=docvault \
               containerImage=${{ needs.build-push.outputs.image }} \
-              databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
-              openAiApiKey="${{ secrets.OPENAI_API_KEY }}"
+              databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}"
