@@ -96,15 +96,14 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Bicep infra
-        uses: azure/arm-deploy@v2
-        with:
-          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
-          deploymentName: docvault-${{ github.run_id }}
-          template: infra/main.bicep
-          parameters: >
-            appName=docvault
-            containerImage=${{ needs.build-push.outputs.image }}
-            databaseConnectionString=${{ secrets.DATABASE_CONNECTION_STRING }}
-            openAiApiKey=${{ secrets.OPENAI_API_KEY }}
-            ghcrToken=${{ secrets.GITHUB_TOKEN }}
-          failOnStdErr: false
+        run: |
+          az deployment group create \
+            --name docvault-${{ github.run_id }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --parameters \
+              appName=docvault \
+              containerImage=${{ needs.build-push.outputs.image }} \
+              databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
+              openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+              ghcrToken="${{ secrets.GITHUB_TOKEN }}"
