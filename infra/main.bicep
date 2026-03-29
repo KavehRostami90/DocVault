@@ -15,26 +15,7 @@ param containerImage string
 @secure()
 param databaseConnectionString string
 
-@description('OpenAI API key. Leave empty to use FakeEmbeddingProvider.')
-@secure()
-param openAiApiKey string = ''
 
-// Conditionally include OpenAI secret only when a key is provided
-var useOpenAi = !empty(openAiApiKey)
-var baseSecrets = [
-  { name: 'db-connection-string', value: databaseConnectionString }
-]
-var openAiSecret = useOpenAi ? [{ name: 'openai-api-key', value: openAiApiKey }] : []
-var allSecrets = concat(baseSecrets, openAiSecret)
-
-var baseEnvVars = [
-  { name: 'ASPNETCORE_ENVIRONMENT',     value: 'Production' }
-  { name: 'ConnectionStrings__Database', secretRef: 'db-connection-string' }
-  { name: 'OpenAI__Model',              value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',         value: '1536' }
-]
-var openAiEnvVar = useOpenAi ? [{ name: 'OpenAI__ApiKey', secretRef: 'openai-api-key' }] : []
-var allEnvVars = concat(baseEnvVars, openAiEnvVar)
 
 // ── Existing Container Apps Environment (pre-provisioned by env.bicep) ──────
 
@@ -55,7 +36,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
       }
-      secrets: allSecrets
+      secrets: [
+        { name: 'db-connection-string', value: databaseConnectionString }
+      ]
     }
     template: {
       containers: [
@@ -67,7 +50,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: allEnvVars
+          env: [
+            { name: 'ASPNETCORE_ENVIRONMENT',      value: 'Production' }
+            { name: 'ConnectionStrings__Database',  secretRef: 'db-connection-string' }
+          ]
           probes: [
             {
               type: 'Liveness'
