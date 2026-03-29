@@ -73,12 +73,12 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
 
   protected override void Dispose(bool disposing)
   {
-    base.Dispose(disposing);
-    
     if (disposing && Directory.Exists(_storageRoot))
     {
       CleanupStorageDirectory();
     }
+
+    base.Dispose(disposing);
   }
 
   private void CleanupStorageDirectory()

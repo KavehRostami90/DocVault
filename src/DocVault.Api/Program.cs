@@ -55,6 +55,13 @@ try
   // 3. ExceptionHandler — translates unhandled exceptions to problem+json responses
   app.UseExceptionHandler();
 
+  // 4. Rate limiting — enforced before endpoint routing
+  app.UseRateLimiter();
+
+  // 5. Authentication / Authorization
+  app.UseAuthentication();
+  app.UseAuthorization();
+
   if (app.Environment.IsDevelopment())
   {
     app.UseSwaggerUI(c =>

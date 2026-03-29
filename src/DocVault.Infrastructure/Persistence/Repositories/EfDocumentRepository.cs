@@ -6,6 +6,7 @@ using DocVault.Application.UseCases.Search;
 using DocVault.Domain.Common;
 using DocVault.Domain.Documents;
 using Microsoft.EntityFrameworkCore;
+using NpgsqlTypes;
 
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
@@ -122,22 +123,40 @@ public class EfDocumentRepository : IDocumentRepository
       return new Page<SearchResultItem>([], page, size, 0);
     }
 
-    // Build an OR expression tree EF can translate for both the InMemory and
-    // relational providers.  Each term produces:
-    //   d => d.Title.Contains(term) || d.Text.Contains(term)
-    // and the per-term predicates are OR-ed together.
+    // Use PostgreSQL full-text search when running against a real database.
+    // The OR-prefix query (term:*) enables prefix matching on each token.
+    if (_db.Database.IsRelational())
+    {
+      var tsQuery = string.Join(" | ", terms.Select(t => t.Replace("'", "''") + ":*"));
+
+      var docs = await _db.Documents
+        .Include(d => d.Tags)
+        .Where(d => EF.Functions.ToTsVector("english", d.Text).Matches(
+          EF.Functions.ToTsQuery("english", tsQuery)))
+        .ToListAsync(cancellationToken);
+
+      var items = docs
+        .Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
+        .OrderByDescending(i => i.Score)
+        .Skip((page - 1) * size)
+        .Take(size)
+        .ToList();
+
+      return new Page<SearchResultItem>(items, page, size, docs.Count);
+    }
+
+    // InMemory fallback used in tests — LIKE-style OR across title and text.
     IQueryable<Document> q = _db.Documents.Include(d => d.Tags);
     q = q.Where(BuildTermsFilter(terms));
-
     var total = await q.LongCountAsync(cancellationToken);
-    var docs  = await q.ToListAsync(cancellationToken);
-
-    var items = docs.Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
-                    .OrderByDescending(item => item.Score)
-                    .Skip((page - 1) * size)
-                    .Take(size)
-                    .ToList();
-    return new Page<SearchResultItem>(items, page, size, total);
+    var fallbackDocs = await q.ToListAsync(cancellationToken);
+    var fallbackItems = fallbackDocs
+      .Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
+      .OrderByDescending(item => item.Score)
+      .Skip((page - 1) * size)
+      .Take(size)
+      .ToList();
+    return new Page<SearchResultItem>(fallbackItems, page, size, total);
   }
 
   // Builds: d => (d.Title.Contains(t1) || d.Text.Contains(t1))

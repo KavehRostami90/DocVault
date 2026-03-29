@@ -28,6 +28,10 @@ coverage/
 secrets/
 appsettings.*.Local.json
 
+# Bicep/azd local parameter overrides (may contain real secrets)
+infra/*.parameters.local.json
+.azure/
+
 # Docker local overrides
 docker-compose.override.yml
 

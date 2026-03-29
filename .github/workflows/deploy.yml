@@ -1,0 +1,107 @@
+name: Deploy to Azure Container Apps
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [master]
+    types: [completed]
+
+# Only one deploy at a time
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/docvault
+
+jobs:
+  # ── 1. Build & push image to ghcr.io ───────────────────────────────────────
+  build-push:
+    name: Build & Push image
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      # Exact sha-tagged image reference consumed by the deploy job
+      image: ${{ steps.image-ref.outputs.value }}
+
+    steps:
+      # Check out the commit that triggered CI, not the workflow file commit
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Expose the sha-tagged reference as a job output (first tag line)
+      - name: Export image reference
+        id: image-ref
+        run: |
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "value=$TAG" >> $GITHUB_OUTPUT
+
+  # ── 2. Provision infra + deploy container ──────────────────────────────────
+  deploy:
+    name: Deploy to Container Apps
+    runs-on: ubuntu-latest
+    needs: build-push
+    environment: production
+
+    permissions:
+      id-token: write   # required for OIDC login
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep infra
+        uses: azure/arm-deploy@v2
+        with:
+          resourceGroupName: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          deploymentName: docvault-${{ github.run_id }}
+          template: infra/main.bicep
+          parameters: >
+            appName=docvault
+            containerImage=${{ needs.build-push.outputs.image }}
+            databaseConnectionString=${{ secrets.DATABASE_CONNECTION_STRING }}
+            openAiApiKey=${{ secrets.OPENAI_API_KEY }}
+            ghcrToken=${{ secrets.GITHUB_TOKEN }}
+          failOnStdErr: false

@@ -59,9 +59,33 @@ public static class DependencyInjection
     services.AddScoped<ITagRepository, EfTagRepository>();
     services.AddScoped<IImportJobRepository, EfImportJobRepository>();
 
-    services.AddSingleton<IFileStorage>(_ => new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
+    // File storage — Azure Blob when configured, otherwise local disk (dev/test)
+    var azureBlobConnStr = configuration.GetConnectionString("AzureBlob");
+    var azureBlobContainer = configuration["Storage:ContainerName"] ?? "docvault";
+    if (!string.IsNullOrWhiteSpace(azureBlobConnStr))
+    {
+      services.AddSingleton<IFileStorage>(_ =>
+        new AzureBlobFileStorage(azureBlobConnStr, azureBlobContainer));
+    }
+    else
+    {
+      services.AddSingleton<IFileStorage>(_ =>
+        new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
+    }
+
     services.AddSingleton<ITextExtractor, PlainTextExtractor>();
-    services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
+
+    // Embedding provider — OpenAI when API key is configured, otherwise fake (dev/test)
+    var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
+    if (openAiOptions.IsConfigured)
+    {
+      services.Configure<OpenAiOptions>(configuration.GetSection(OpenAiOptions.Section));
+      services.AddHttpClient<IEmbeddingProvider, OpenAiEmbeddingProvider>();
+    }
+    else
+    {
+      services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
+    }
 
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
     services.AddSingleton<DocumentImportedHandler>();

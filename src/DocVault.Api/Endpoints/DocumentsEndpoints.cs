@@ -2,6 +2,7 @@ using DocVault.Api.Contracts.Common;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Validation;
 using DocVault.Api.Mappers;
+using DocVault.Api.Middleware;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
@@ -69,6 +70,7 @@ public static class DocumentsEndpoints
         : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status422UnprocessableEntity);
     })
     .DisableAntiforgery()
+    .RequireRateLimiting(RateLimitPolicies.DocumentUpload)
     .AddEndpointFilterFactory(ValidationFilter.Create<DocumentCreateRequest>())
     .Produces(StatusCodes.Status201Created)
     .ProducesProblem(StatusCodes.Status422UnprocessableEntity)

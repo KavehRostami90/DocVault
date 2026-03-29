@@ -1,6 +1,7 @@
 using DocVault.Domain.Documents;
 using DocVault.Domain.Imports;
 using Microsoft.EntityFrameworkCore;
+using NpgsqlTypes;
 
 namespace DocVault.Infrastructure.Persistence;
 
@@ -30,10 +31,25 @@ public class DocVaultDbContext : DbContext
 
   /// <summary>
   /// Applies all <see cref="IEntityTypeConfiguration{TEntity}"/> classes found in this assembly.
+  /// On relational providers (PostgreSQL) also adds the stored tsvector column + GIN index
+  /// used for full-text search.
   /// </summary>
   /// <param name="modelBuilder">The EF Core model builder.</param>
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
     modelBuilder.ApplyConfigurationsFromAssembly(typeof(DocVaultDbContext).Assembly);
+
+    // Stored generated tsvector column — PostgreSQL only; skipped for InMemory (tests/dev)
+    if (Database.IsRelational())
+    {
+      modelBuilder.Entity<Document>()
+        .Property<NpgsqlTsVector>("SearchVector")
+        .HasColumnType("tsvector")
+        .HasComputedColumnSql("to_tsvector('english', coalesce(\"Text\", ''))", stored: true);
+
+      modelBuilder.Entity<Document>()
+        .HasIndex("SearchVector")
+        .HasMethod("GIN");
+    }
   }
 }
