@@ -1,6 +1,7 @@
 name: Deploy to Azure Web App
 
 on:
+  workflow_dispatch:  # manual trigger from GitHub Actions UI
   workflow_run:
     workflows: ["CI"]
     branches: [master]
@@ -15,7 +16,8 @@ jobs:
   deploy:
     name: Build & Deploy to Web App
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # For workflow_run: only run if CI passed. For manual: always run.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     permissions:
       id-token: write   # required for OIDC login
@@ -24,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -48,7 +50,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy infrastructure
+      - name: Deploy infrastructure (Free tier Web App)
         run: |
           az deployment group create \
             --name docvault-infra-${{ github.run_id }} \
@@ -65,3 +67,11 @@ jobs:
             --name docvault \
             --src-path app.zip \
             --type zip
+
+      - name: Print app URL
+        run: |
+          URL=$(az webapp show \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name docvault \
+            --query defaultHostName -o tsv)
+          echo "App deployed at: https://$URL"
