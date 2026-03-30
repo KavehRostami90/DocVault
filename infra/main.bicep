@@ -26,22 +26,22 @@ var baseAppSettings = [
 var openAiSetting = useOpenAi ? [{ name: 'OpenAI__ApiKey', value: openAiApiKey }] : []
 var allAppSettings = concat(baseAppSettings, openAiSetting)
 
-// ── App Service Plan (Linux) ──────────────────────────────────────────────
+// ── App Service Plan (Free tier) ────────────────────────────────────────
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${appName}-plan'
   location: location
   kind: 'linux'
   sku: {
-    name: 'B1'
-    tier: 'Basic'
+    name: 'F1'
+    tier: 'Free'
   }
   properties: {
     reserved: true   // required for Linux
   }
 }
 
-// ── Web App ────────────────────────────────────────────────────────────────
+// ── Web App ──────────────────────────────────────────────────────────────
 
 resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
@@ -60,11 +60,11 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
           type: 'Custom'
         }
       ]
-      healthCheckPath: '/health/alive'
+      // Note: healthCheckPath and alwaysOn are not available on Free tier
     }
   }
 }
 
-// ── Outputs ───────────────────────────────────────────────────────────────
+// ── Outputs ─────────────────────────────────────────────────────────────
 
 output appUrl string = 'https://${app.properties.defaultHostName}'
