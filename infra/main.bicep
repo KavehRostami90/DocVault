@@ -19,9 +19,10 @@ param openAiApiKey string = ''
 var useOpenAi = !empty(openAiApiKey)
 
 var baseAppSettings = [
-  { name: 'ASPNETCORE_ENVIRONMENT',  value: 'Production' }
-  { name: 'OpenAI__Model',           value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',      value: '1536' }
+  { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
+  { name: 'ASPNETCORE_URLS',        value: 'http://+:8080' }  // App Service expects port 8080
+  { name: 'OpenAI__Model',          value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',     value: '1536' }
 ]
 var openAiSetting = useOpenAi ? [{ name: 'OpenAI__ApiKey', value: openAiApiKey }] : []
 var allAppSettings = concat(baseAppSettings, openAiSetting)
@@ -61,7 +62,6 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
           type: 'Custom'
         }
       ]
-      // Note: healthCheckPath and alwaysOn are not available on Free tier
     }
   }
 }
