@@ -40,8 +40,9 @@ jobs:
             -o ./publish \
             /p:UseAppHost=false
 
+      # cd into publish so files are at the root of the zip (not under publish/)
       - name: Zip publish output
-        run: zip -r app.zip ./publish
+        run: cd publish && zip -r ../app.zip .
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
