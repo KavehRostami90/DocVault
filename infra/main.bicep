@@ -16,22 +16,27 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
-@description('Comma-separated allowed CORS origins. Defaults to * (all).')
-param corsAllowedOrigins string = '*'
+@description('Comma-separated allowed CORS origins (e.g. https://example.azurestaticapps.net).')
+param corsAllowedOrigins string
 
-var useOpenAi = !empty(openAiApiKey)
+// ── App Settings ───────────────────────────────────────────────────────────
 
 var baseAppSettings = [
-  { name: 'ASPNETCORE_ENVIRONMENT',  value: 'Production' }
-  { name: 'ASPNETCORE_URLS',         value: 'http://+:8080' }
-  { name: 'Cors__AllowedOrigins',    value: corsAllowedOrigins }
-  { name: 'OpenAI__Model',           value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',      value: '1536' }
+  { name: 'ASPNETCORE_ENVIRONMENT',        value: 'Production' }
+  { name: 'ASPNETCORE_URLS',               value: 'http://+:8080' }
+  // Connection string as an env var so it maps directly to ConnectionStrings__Database
+  { name: 'ConnectionStrings__Database',   value: databaseConnectionString }
+  { name: 'Cors__AllowedOrigins',          value: corsAllowedOrigins }
+  { name: 'OpenAI__Model',                 value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',            value: '1536' }
 ]
-var openAiSetting = useOpenAi ? [{ name: 'OpenAI__ApiKey', value: openAiApiKey }] : []
-var allAppSettings = concat(baseAppSettings, openAiSetting)
 
-// ── App Service Plan (Free tier) ──────────────────────────────────────────
+var allAppSettings = !empty(openAiApiKey)
+  ? concat(baseAppSettings, [{ name: 'OpenAI__ApiKey', value: openAiApiKey }])
+  : baseAppSettings
+
+// ── App Service Plan ───────────────────────────────────────────────────────
+// F1 (Free) has no "Always On" — upgrade to B1 for production workloads.
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${appName}-plan'
@@ -58,14 +63,8 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       linuxFxVersion: 'DOTNETCORE|10.0'
       appCommandLine: 'dotnet DocVault.Api.dll'
+      healthCheckPath: '/health/live'
       appSettings: allAppSettings
-      connectionStrings: [
-        {
-          name: 'Database'
-          connectionString: databaseConnectionString
-          type: 'Custom'
-        }
-      ]
     }
   }
 }
@@ -73,3 +72,4 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
 // ── Outputs ────────────────────────────────────────────────────────────────
 
 output appUrl string = 'https://${app.properties.defaultHostName}'
+output appName string = app.name

@@ -2,16 +2,12 @@ name: Deploy to Azure Web App
 
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Branch or SHA to deploy'
-        required: false
-        default: 'claude/deploy-web-app-container-ZZ9Yj'
   workflow_run:
     workflows: ["CI"]
     branches: [master]
     types: [completed]
 
+# Only one deploy at a time; never cancel an in-progress deploy.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -23,18 +19,27 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     permissions:
-      id-token: write
+      id-token: write   # required for OIDC login
       contents: read
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.ref || github.sha) || github.event.workflow_run.head_sha }}
+          # workflow_run: deploy the exact commit that passed CI
+          # workflow_dispatch: deploy the branch/SHA the dispatch was triggered on
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.x'
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
+          restore-keys: nuget-
 
       - name: Publish app
         run: |
@@ -53,15 +58,18 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy infrastructure (Free tier Web App)
+      - name: Deploy infrastructure
         run: |
           az deployment group create \
             --name docvault-infra-${{ github.run_id }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
+            --mode Incremental \
             --parameters \
               appName=docvault \
-              databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}"
+              databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
+              openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+              corsAllowedOrigins="${{ vars.CORS_ALLOWED_ORIGINS }}"
 
       - name: Deploy app to Web App
         run: |
@@ -69,7 +77,8 @@ jobs:
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name docvault \
             --src-path app.zip \
-            --type zip
+            --type zip \
+            --async false
 
       - name: Print app URL
         run: |
@@ -77,4 +86,4 @@ jobs:
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name docvault \
             --query defaultHostName -o tsv)
-          echo "App deployed at: https://$URL"
+          echo "App deployed to: https://$URL"
