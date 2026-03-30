@@ -69,7 +69,7 @@ jobs:
               appName=docvault \
               databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
               openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
-              corsAllowedOrigins="${{ vars.CORS_ALLOWED_ORIGINS }}"
+              corsAllowedOrigins="${{ vars.CORS_ALLOWED_ORIGINS || '*' }}"
 
       - name: Deploy app to Web App
         run: |

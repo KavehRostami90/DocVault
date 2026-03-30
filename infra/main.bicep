@@ -16,8 +16,8 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
-@description('Comma-separated allowed CORS origins (e.g. https://example.azurestaticapps.net).')
-param corsAllowedOrigins string
+@description('Comma-separated allowed CORS origins (e.g. https://example.azurestaticapps.net). Set via CORS_ALLOWED_ORIGINS GitHub variable.')
+param corsAllowedOrigins string = '*'
 
 // ── App Settings ───────────────────────────────────────────────────────────
 
