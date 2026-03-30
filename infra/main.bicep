@@ -16,18 +16,22 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
+@description('Comma-separated allowed CORS origins. Defaults to * (all).')
+param corsAllowedOrigins string = '*'
+
 var useOpenAi = !empty(openAiApiKey)
 
 var baseAppSettings = [
-  { name: 'ASPNETCORE_ENVIRONMENT', value: 'Production' }
-  { name: 'ASPNETCORE_URLS',        value: 'http://+:8080' }  // App Service expects port 8080
-  { name: 'OpenAI__Model',          value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',     value: '1536' }
+  { name: 'ASPNETCORE_ENVIRONMENT',  value: 'Production' }
+  { name: 'ASPNETCORE_URLS',         value: 'http://+:8080' }
+  { name: 'Cors__AllowedOrigins',    value: corsAllowedOrigins }
+  { name: 'OpenAI__Model',           value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',      value: '1536' }
 ]
 var openAiSetting = useOpenAi ? [{ name: 'OpenAI__ApiKey', value: openAiApiKey }] : []
 var allAppSettings = concat(baseAppSettings, openAiSetting)
 
-// ── App Service Plan (Free tier) ────────────────────────────────────────
+// ── App Service Plan (Free tier) ──────────────────────────────────────────
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${appName}-plan'
@@ -38,11 +42,11 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
     tier: 'Free'
   }
   properties: {
-    reserved: true   // required for Linux
+    reserved: true
   }
 }
 
-// ── Web App ──────────────────────────────────────────────────────────────
+// ── Web App ────────────────────────────────────────────────────────────────
 
 resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
@@ -66,6 +70,6 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
-// ── Outputs ─────────────────────────────────────────────────────────────
+// ── Outputs ────────────────────────────────────────────────────────────────
 
 output appUrl string = 'https://${app.properties.defaultHostName}'

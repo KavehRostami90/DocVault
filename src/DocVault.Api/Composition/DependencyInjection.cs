@@ -18,6 +18,17 @@ public static class DependencyInjection
     services.AddApplication();
     services.AddInfrastructure(configuration);
 
+    // CORS — origins driven by config so the value can be tightened per-environment
+    var rawOrigins = configuration["Cors:AllowedOrigins"] ?? string.Empty;
+    var origins = rawOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    services.AddCors(options => options.AddDefaultPolicy(policy =>
+    {
+      if (origins.Length == 0 || origins.Contains("*"))
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+      else
+        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod();
+    }));
+
     services.AddApiVersioning(options =>
     {
       options.DefaultApiVersion = new ApiVersion(1, 0);
@@ -28,7 +39,6 @@ public static class DependencyInjection
 
     services.AddRateLimiter(options =>
     {
-      // 20 uploads per IP per minute — protect the ingestion pipeline
       options.AddPolicy(RateLimitPolicies.DocumentUpload, httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
           partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -49,8 +59,6 @@ public static class DependencyInjection
     services.AddProblemDetails();
     services.AddValidatorsFromAssemblyContaining<DocumentCreateRequestValidator>();
 
-    // JWT Bearer — only wire up when Authority/Audience are configured.
-    // In local development without Auth config, all endpoints remain open.
     var authOptions = configuration.GetSection(AuthOptions.Section).Get<AuthOptions>() ?? new AuthOptions();
     if (authOptions.IsConfigured)
     {
@@ -69,7 +77,6 @@ public static class DependencyInjection
     }
     else
     {
-      // Fallback: allow-all so the app still starts without auth config
       services.AddAuthentication();
       services.AddAuthorization();
     }
