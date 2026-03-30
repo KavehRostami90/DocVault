@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Upload, FileText, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Search, Upload, FileText, ChevronLeft, ChevronRight, X, AlertCircle } from 'lucide-react'
 import { listDocuments } from '../api/documents'
 import { listTags } from '../api/tags'
 import StatusBadge from '../components/StatusBadge'
@@ -20,19 +20,27 @@ export default function DocumentsPage() {
   const [tagFilter, setTagFilter] = useState('')
   const [showUpload, setShowUpload] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     try {
       const result = await listDocuments({ page, size: PAGE_SIZE, title: titleFilter || undefined, status: statusFilter || undefined, tag: tagFilter || undefined })
       setData(result)
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load documents')
+    } finally {
       setLoading(false)
     }
   }, [page, titleFilter, statusFilter, tagFilter])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { listTags().then(ts => setTags(ts.map(t => t.name))) }, [])
+  useEffect(() => {
+    listTags()
+      .then(ts => setTags(ts.map(t => t.name)))
+      .catch(() => { /* tags are optional */ })
+  }, [])
 
   const totalPages = data ? Math.ceil(data.totalCount / PAGE_SIZE) : 1
   const hasFilters = titleFilter || statusFilter || tagFilter
@@ -42,7 +50,9 @@ export default function DocumentsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Documents</h1>
-          <p className="text-slate-400 text-sm mt-1">{data ? `${data.totalCount} document${data.totalCount !== 1 ? 's' : ''}` : 'Loading...'}</p>
+          <p className="text-slate-400 text-sm mt-1">
+            {error ? 'Error loading' : data ? `${data.totalCount} document${data.totalCount !== 1 ? 's' : ''}` : 'Loading...'}
+          </p>
         </div>
         <button onClick={() => setShowUpload(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors">
           <Upload className="w-4 h-4" />Upload
@@ -69,7 +79,16 @@ export default function DocumentsPage() {
         )}
       </div>
 
-      {loading ? (
+      {error ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="w-16 h-16 bg-red-900/20 rounded-2xl flex items-center justify-center mb-4">
+            <AlertCircle className="w-8 h-8 text-red-400" />
+          </div>
+          <p className="text-red-400 font-medium">Could not reach the API</p>
+          <p className="text-slate-600 text-sm mt-1 max-w-sm">{error}</p>
+          <button onClick={load} className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors">Try again →</button>
+        </div>
+      ) : loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-5 animate-pulse">

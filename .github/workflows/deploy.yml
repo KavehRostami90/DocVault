@@ -1,13 +1,17 @@
 name: Deploy to Azure Web App
 
 on:
-  workflow_dispatch:  # manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or SHA to deploy'
+        required: false
+        default: 'claude/deploy-web-app-container-ZZ9Yj'
   workflow_run:
     workflows: ["CI"]
     branches: [master]
     types: [completed]
 
-# Only one deploy at a time
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -16,17 +20,16 @@ jobs:
   deploy:
     name: Build & Deploy to Web App
     runs-on: ubuntu-latest
-    # For workflow_run: only run if CI passed. For manual: always run.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     permissions:
-      id-token: write   # required for OIDC login
+      id-token: write
       contents: read
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.ref || github.sha) || github.event.workflow_run.head_sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -40,7 +43,6 @@ jobs:
             -o ./publish \
             /p:UseAppHost=false
 
-      # cd into publish so files are at the root of the zip (not under publish/)
       - name: Zip publish output
         run: cd publish && zip -r ../app.zip .
 

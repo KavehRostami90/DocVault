@@ -1,25 +1,28 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, FileText, Zap } from 'lucide-react'
+import { Search, FileText, Zap, AlertCircle } from 'lucide-react'
 import { searchDocuments } from '../api/search'
 import type { SearchResultItem } from '../types'
 
 export default function SearchPage() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResultItem[]>([])
+  const [results, setResults] = useState<SearchResultItem[]>([]
+  )
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const search = async () => {
     if (!query.trim()) return
     setLoading(true)
+    setError(null)
     try {
       const res = await searchDocuments(query.trim())
       setResults(res.items)
       setSearched(true)
-    } catch {
-      setResults([])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Search failed')
       setSearched(true)
     } finally {
       setLoading(false)
@@ -54,7 +57,14 @@ export default function SearchPage() {
         </button>
       </div>
 
-      {searched && results.length === 0 && (
+      {error && (
+        <div className="flex items-center gap-3 bg-red-900/20 border border-red-900/30 rounded-xl p-4 mb-6">
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+          <p className="text-red-400 text-sm">{error}</p>
+        </div>
+      )}
+
+      {searched && !error && results.length === 0 && (
         <div className="text-center py-16">
           <p className="text-slate-400">No results for <span className="text-white">"{query}"</span></p>
           <p className="text-slate-600 text-sm mt-1">Try different keywords or check if documents are indexed</p>
