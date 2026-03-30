@@ -38,7 +38,8 @@ docker-compose.override.yml
 # Azurite local storage (Azure Storage emulator)
 __blobstorage__/
 __queuestorage__/
-# Azurite local storage (Azure Storage emulator)
-__blobstorage__/
-__queuestorage__/
 
+# UI — dependencies, build output, and TS incremental build cache
+ui/node_modules/
+ui/dist/
+ui/*.tsbuildinfo
