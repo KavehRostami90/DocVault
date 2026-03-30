@@ -8,9 +8,6 @@ param appName string = 'docvault'
 @description('Azure region. Defaults to the resource group location.')
 param location string = resourceGroup().location
 
-@description('Container image to deploy, e.g. ghcr.io/kavehrostami90/docvault:latest')
-param containerImage string
-
 @description('PostgreSQL connection string (from Neon or other provider).')
 @secure()
 param databaseConnectionString string
@@ -19,87 +16,55 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
-// Conditionally include OpenAI secret only when a key is provided
 var useOpenAi = !empty(openAiApiKey)
-var baseSecrets = [
-  { name: 'db-connection-string', value: databaseConnectionString }
+
+var baseAppSettings = [
+  { name: 'ASPNETCORE_ENVIRONMENT',  value: 'Production' }
+  { name: 'OpenAI__Model',           value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',      value: '1536' }
 ]
-var openAiSecret = useOpenAi ? [{ name: 'openai-api-key', value: openAiApiKey }] : []
-var allSecrets = concat(baseSecrets, openAiSecret)
+var openAiSetting = useOpenAi ? [{ name: 'OpenAI__ApiKey', value: openAiApiKey }] : []
+var allAppSettings = concat(baseAppSettings, openAiSetting)
 
-var baseEnvVars = [
-  { name: 'ASPNETCORE_ENVIRONMENT',     value: 'Production' }
-  { name: 'ConnectionStrings__Database', secretRef: 'db-connection-string' }
-  { name: 'OpenAI__Model',              value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',         value: '1536' }
-]
-var openAiEnvVar = useOpenAi ? [{ name: 'OpenAI__ApiKey', secretRef: 'openai-api-key' }] : []
-var allEnvVars = concat(baseEnvVars, openAiEnvVar)
+// ── App Service Plan (Linux) ──────────────────────────────────────────────
 
-// ── Existing Container Apps Environment (pre-provisioned by env.bicep) ──────
-
-resource env 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
-  name: '${appName}-env'
+resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
+  name: '${appName}-plan'
+  location: location
+  kind: 'linux'
+  sku: {
+    name: 'B1'
+    tier: 'Basic'
+  }
+  properties: {
+    reserved: true   // required for Linux
+  }
 }
 
-// ── Container App ───────────────────────────────────────────────────────────
+// ── Web App ────────────────────────────────────────────────────────────────
 
-resource app 'Microsoft.App/containerApps@2024-03-01' = {
+resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
   location: location
+  kind: 'app,linux'
   properties: {
-    managedEnvironmentId: env.id
-    configuration: {
-      ingress: {
-        external: true
-        targetPort: 8080
-        transport: 'http'
-      }
-      secrets: allSecrets
-    }
-    template: {
-      containers: [
+    serverFarmId: plan.id
+    httpsOnly: true
+    siteConfig: {
+      linuxFxVersion: 'DOTNETCORE|10.0'
+      appSettings: allAppSettings
+      connectionStrings: [
         {
-          name: appName
-          image: containerImage
-          resources: {
-            // Consumption plan free grant covers ~180K vCPU-s/month
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-          env: allEnvVars
-          probes: [
-            {
-              type: 'Liveness'
-              httpGet: { path: '/health/alive', port: 8080, scheme: 'HTTP' }
-              initialDelaySeconds: 5
-              periodSeconds: 15
-              failureThreshold: 3
-            }
-            {
-              type: 'Readiness'
-              httpGet: { path: '/health/ready', port: 8080, scheme: 'HTTP' }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-              failureThreshold: 3
-            }
-          ]
+          name: 'Database'
+          connectionString: databaseConnectionString
+          type: 'Custom'
         }
       ]
-      scale: {
-        minReplicas: 0   // scale-to-zero keeps costs at zero when idle
-        maxReplicas: 3
-        rules: [
-          {
-            name: 'http-scaling'
-            http: { metadata: { concurrentRequests: '20' } }
-          }
-        ]
-      }
+      healthCheckPath: '/health/alive'
     }
   }
 }
 
-// ── Outputs ─────────────────────────────────────────────────────────────────
+// ── Outputs ───────────────────────────────────────────────────────────────
 
-output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
+output appUrl string = 'https://${app.properties.defaultHostName}'

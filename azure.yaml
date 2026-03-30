@@ -8,7 +8,7 @@ services:
   api:
     project: src/DocVault.Api
     language: dotnet
-    host: containerapp
+    host: appservice
 
 infra:
   provider: bicep
