@@ -28,6 +28,9 @@ jobs:
 
     env:
       ConnectionStrings__Database: "Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault"
+      Auth__JwtSigningKey: "ci-test-signing-key-minimum-32-chars!!"
+      Auth__AdminEmail: "admin@docvault.local"
+      Auth__AdminPassword: "Admin1234!"
 
     steps:
       - uses: actions/checkout@v4

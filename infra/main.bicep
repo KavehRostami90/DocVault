@@ -16,19 +16,36 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
-@description('Comma-separated allowed CORS origins (e.g. https://example.azurestaticapps.net). Set via CORS_ALLOWED_ORIGINS GitHub variable.')
-param corsAllowedOrigins string = '*'
+@description('Comma-separated allowed CORS origins. Must be set to the Static Web App URL in production.')
+param corsAllowedOrigins string = ''
+
+@description('JWT signing key — minimum 32 characters. Must be kept secret.')
+@secure()
+param jwtSigningKey string
+
+@description('Email address for the seeded admin account.')
+param adminEmail string = 'admin@docvault.local'
+
+@description('Password for the seeded admin account.')
+@secure()
+param adminPassword string
 
 // ── App Settings ───────────────────────────────────────────────────────────
 
 var baseAppSettings = [
-  { name: 'ASPNETCORE_ENVIRONMENT',        value: 'Production' }
-  { name: 'ASPNETCORE_URLS',               value: 'http://+:8080' }
-  // Connection string as an env var so it maps directly to ConnectionStrings__Database
-  { name: 'ConnectionStrings__Database',   value: databaseConnectionString }
-  { name: 'Cors__AllowedOrigins',          value: corsAllowedOrigins }
-  { name: 'OpenAI__Model',                 value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',            value: '1536' }
+  { name: 'ASPNETCORE_ENVIRONMENT',      value: 'Production' }
+  { name: 'ASPNETCORE_URLS',             value: 'http://+:8080' }
+  { name: 'ConnectionStrings__Database', value: databaseConnectionString }
+  { name: 'Cors__AllowedOrigins',        value: corsAllowedOrigins }
+  { name: 'Auth__JwtSigningKey',         value: jwtSigningKey }
+  { name: 'Auth__JwtIssuer',             value: 'docvault' }
+  { name: 'Auth__JwtAudience',           value: 'docvault-ui' }
+  { name: 'Auth__AccessTokenExpiryMinutes', value: '15' }
+  { name: 'Auth__RefreshTokenExpiryDays',   value: '7' }
+  { name: 'Auth__AdminEmail',            value: adminEmail }
+  { name: 'Auth__AdminPassword',         value: adminPassword }
+  { name: 'OpenAI__Model',               value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',          value: '1536' }
 ]
 
 var allAppSettings = !empty(openAiApiKey)

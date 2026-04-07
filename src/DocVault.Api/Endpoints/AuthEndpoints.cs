@@ -174,13 +174,17 @@ public static class AuthEndpoints
 
   private static void SetRefreshCookie(HttpContext http, TokenPair pair)
   {
+    // In production: SameSite=None;Secure is required for cross-origin cookie (SWA → App Service).
+    // In development: SameSite=Lax without Secure so the cookie works over HTTP through the Vite proxy.
+    var isDev = http.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment();
+
     http.Response.Cookies.Append(RefreshTokenCookie, pair.RefreshToken, new CookieOptions
     {
       HttpOnly = true,
-      Secure = true,
-      SameSite = SameSiteMode.None,
-      Expires = pair.RefreshTokenExpiresAt,
-      Path = "/",
+      Secure   = !isDev,
+      SameSite = isDev ? SameSiteMode.Lax : SameSiteMode.None,
+      Expires  = pair.RefreshTokenExpiresAt,
+      Path     = "/",
     });
   }
 
