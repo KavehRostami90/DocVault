@@ -11,7 +11,6 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    environment: production
 
     permissions:
       id-token: write
