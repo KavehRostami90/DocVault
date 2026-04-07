@@ -29,7 +29,10 @@ public static class DependencyInjection
     services.AddCors(options => options.AddDefaultPolicy(policy =>
     {
       if (origins.Length == 0 || origins.Contains("*"))
-        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        // AllowAnyOrigin() cannot be combined with AllowCredentials() (browser hard-blocks it).
+        // SetIsOriginAllowed echoes back the request Origin, satisfying the browser.
+        // Only used when no explicit origins are configured (dev / unconfigured deployments).
+        policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
       else
         policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
     }));
