@@ -20,8 +20,8 @@ public static class DependencyInjection
 {
   public static IServiceCollection AddDocVault(this IServiceCollection services, IConfiguration configuration)
   {
-    services.AddApplication();
     services.AddInfrastructure(configuration);
+    services.AddApplication();
 
     // CORS — allow credentials when specific origins are configured (required for httpOnly cookie cross-origin)
     var rawOrigins = configuration["Cors:AllowedOrigins"] ?? string.Empty;

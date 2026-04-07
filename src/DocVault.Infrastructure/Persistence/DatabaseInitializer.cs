@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace DocVault.Infrastructure.Persistence;
 
@@ -34,17 +35,9 @@ public class DatabaseInitializer : IHostedService
       {
         var hasMigrations = dbContext.Database.GetMigrations().Any();
         if (hasMigrations)
-        {
-          // If the schema already exists but has no migration history (e.g. created via
-          // EnsureCreated or a volume that survived a migration reset), seed the history
-          // table with all known migrations so MigrateAsync only applies genuinely new ones.
-          await SeedMigrationHistoryIfNeededAsync(dbContext, cancellationToken);
-          await dbContext.Database.MigrateAsync(cancellationToken);
-        }
+          await MigrateWithFallbackAsync(dbContext, cancellationToken);
         else
-        {
           await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-        }
       }
       else
       {
@@ -64,87 +57,68 @@ public class DatabaseInitializer : IHostedService
   public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
   /// <summary>
-  /// Detects a database whose schema was created outside of EF migrations (no history rows)
-  /// and inserts rows for every migration that is already represented by an existing table,
-  /// so that <c>MigrateAsync</c> can proceed without trying to re-create them.
+  /// Runs <c>MigrateAsync</c> and, if a duplicate-table error is raised (meaning the schema
+  /// was pre-created without a migration history), seeds the history table from a fresh
+  /// connection and retries so only genuinely new migrations are applied.
   /// </summary>
-  private async Task SeedMigrationHistoryIfNeededAsync(DocVaultDbContext dbContext, CancellationToken cancellationToken)
+  private async Task MigrateWithFallbackAsync(DocVaultDbContext dbContext, CancellationToken cancellationToken)
   {
-    var appliedMigrations = (await dbContext.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
-    if (appliedMigrations.Count > 0)
-      return; // history already populated — nothing to do
-
-    // Check whether the schema actually exists (Documents table is a reliable indicator).
-    var conn = dbContext.Database.GetDbConnection();
-    await conn.OpenAsync(cancellationToken);
-    bool schemaExists;
     try
     {
-      using var cmd = conn.CreateCommand();
-      cmd.CommandText =
-        "SELECT COUNT(*) FROM information_schema.tables " +
-        "WHERE table_schema = 'public' AND table_name = 'Documents'";
-      var result = await cmd.ExecuteScalarAsync(cancellationToken);
-      schemaExists = Convert.ToInt64(result) > 0;
+      await dbContext.Database.MigrateAsync(cancellationToken);
     }
-    finally
+    catch (PostgresException ex) when (ex.SqlState == "42P07") // duplicate_table
     {
-      await conn.CloseAsync();
+      _logger.LogWarning(
+        "Schema exists but EF migration history is missing (42P07 – relation already exists). " +
+        "Seeding history table with all known migrations and retrying.");
+
+      await SeedHistoryFromExistingSchemaAsync(dbContext, cancellationToken);
+      await dbContext.Database.MigrateAsync(cancellationToken);
     }
+  }
 
-    if (!schemaExists)
-      return; // fresh database — let MigrateAsync handle it normally
-
-    _logger.LogWarning(
-      "Database schema exists but migration history is empty. " +
-      "Seeding migration history to avoid duplicate table errors.");
-
-    // EF Core 10 ships with product version "10.0.0".
+  /// <summary>
+  /// Opens a dedicated <see cref="NpgsqlConnection"/> (bypassing EF's connection management)
+  /// and inserts every known migration ID into <c>__EFMigrationsHistory</c>, creating the
+  /// table first when it does not yet exist.
+  /// </summary>
+  private static async Task SeedHistoryFromExistingSchemaAsync(
+    DocVaultDbContext dbContext,
+    CancellationToken cancellationToken)
+  {
+    var connectionString = dbContext.Database.GetConnectionString()!;
     const string productVersion = "10.0.0";
     var allMigrations = dbContext.Database.GetMigrations().ToList();
 
+    await using var conn = new NpgsqlConnection(connectionString);
     await conn.OpenAsync(cancellationToken);
-    try
+
+    await using (var ensureCmd = conn.CreateCommand())
     {
-      // Ensure __EFMigrationsHistory exists before inserting.
-      using (var ensureCmd = conn.CreateCommand())
-      {
-        ensureCmd.CommandText =
-          """
-          CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
-              "MigrationId"    character varying(150) NOT NULL,
-              "ProductVersion" character varying(32)  NOT NULL,
-              CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
-          );
-          """;
-        await ensureCmd.ExecuteNonQueryAsync(cancellationToken);
-      }
-
-      foreach (var migrationId in allMigrations)
-      {
-        using var insertCmd = conn.CreateCommand();
-        insertCmd.CommandText =
-          """
-          INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-          VALUES (@id, @ver)
-          ON CONFLICT DO NOTHING
-          """;
-        var p1 = insertCmd.CreateParameter();
-        p1.ParameterName = "@id";
-        p1.Value = migrationId;
-        insertCmd.Parameters.Add(p1);
-
-        var p2 = insertCmd.CreateParameter();
-        p2.ParameterName = "@ver";
-        p2.Value = productVersion;
-        insertCmd.Parameters.Add(p2);
-
-        await insertCmd.ExecuteNonQueryAsync(cancellationToken);
-      }
+      ensureCmd.CommandText =
+        """
+        CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+            "MigrationId"    character varying(150) NOT NULL,
+            "ProductVersion" character varying(32)  NOT NULL,
+            CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+        )
+        """;
+      await ensureCmd.ExecuteNonQueryAsync(cancellationToken);
     }
-    finally
+
+    foreach (var migrationId in allMigrations)
     {
-      await conn.CloseAsync();
+      await using var insertCmd = conn.CreateCommand();
+      insertCmd.CommandText =
+        """
+        INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        VALUES (@id, @ver)
+        ON CONFLICT DO NOTHING
+        """;
+      insertCmd.Parameters.AddWithValue("id", migrationId);
+      insertCmd.Parameters.AddWithValue("ver", productVersion);
+      await insertCmd.ExecuteNonQueryAsync(cancellationToken);
     }
   }
 }
