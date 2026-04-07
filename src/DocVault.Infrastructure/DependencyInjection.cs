@@ -1,9 +1,11 @@
+using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Background.Queue;
+using DocVault.Infrastructure.Auth;
 using DocVault.Infrastructure.Embeddings;
 using DocVault.Infrastructure.Messaging;
 using DocVault.Infrastructure.Messaging.Handlers;
@@ -11,27 +13,15 @@ using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Persistence.Repositories;
 using DocVault.Infrastructure.Storage;
 using DocVault.Infrastructure.Text;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DocVault.Infrastructure;
 
-/// <summary>
-/// Extension methods for registering all infrastructure services with the DI container.
-/// </summary>
 public static class DependencyInjection
 {
-  /// <summary>
-  /// Registers EF Core, repositories, storage, text extractors, embedding provider,
-  /// messaging, and the database initializer.
-  /// When a <c>Database:ConnectionString</c> is configured, PostgreSQL is used and
-  /// <see cref="DocVault.Infrastructure.Messaging.PostgresWorkQueue"/> replaces the
-  /// in-process channel queue; otherwise an in-memory database is used.
-  /// </summary>
-  /// <param name="services">The service collection to configure.</param>
-  /// <param name="configuration">The application configuration.</param>
-  /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
   public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
   {
     var connectionString = configuration.GetConnectionString("Database");
@@ -42,24 +32,32 @@ public static class DependencyInjection
     }
     else
     {
-      // AddDbContextFactory registers DbContextOptions<T> as Singleton, which allows the
-      // factory itself to be Singleton (consumed by PostgresWorkQueue).
-      // The explicit AddScoped below gives repositories the per-request DbContext they expect,
-      // without re-registering options as Scoped (which would cause the Singleton → Scoped
-      // lifetime violation caught by the DI validator).
       services.AddDbContextFactory<DocVaultDbContext>(options => options.UseNpgsql(connectionString));
       services.AddScoped(sp =>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
 
-      // Override the in-process ChannelWorkQueue registered by the Application layer.
       services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
     }
+
+    // ASP.NET Core Identity (roles + EF stores)
+    services.AddIdentityCore<ApplicationUser>(options =>
+    {
+      options.Password.RequiredLength = 8;
+      options.Password.RequireNonAlphanumeric = false;
+      options.User.RequireUniqueEmail = true;
+    })
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<DocVaultDbContext>()
+    .AddDefaultTokenProviders();
+
+    services.Configure<AuthSettings>(configuration.GetSection(AuthSettings.Section));
+    services.AddScoped<ITokenService, JwtTokenService>();
+    services.AddScoped<IdentitySeeder>();
 
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();
     services.AddScoped<ITagRepository, EfTagRepository>();
     services.AddScoped<IImportJobRepository, EfImportJobRepository>();
 
-    // File storage — Azure Blob when configured, otherwise local disk (dev/test)
     var azureBlobConnStr = configuration.GetConnectionString("AzureBlob");
     var azureBlobContainer = configuration["Storage:ContainerName"] ?? "docvault";
     if (!string.IsNullOrWhiteSpace(azureBlobConnStr))
@@ -75,7 +73,6 @@ public static class DependencyInjection
 
     services.AddSingleton<ITextExtractor, PlainTextExtractor>();
 
-    // Embedding provider — OpenAI when API key is configured, otherwise fake (dev/test)
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
     if (openAiOptions.IsConfigured)
     {

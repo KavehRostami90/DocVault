@@ -1,26 +1,30 @@
 using DocVault.Api.Contracts.Common;
 using DocVault.Api.Contracts.Search;
 using DocVault.Api.Validation;
+using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.UseCases.Search;
 
 namespace DocVault.Api.Endpoints;
 
-/// <summary>
-/// Maps search endpoints.
-/// </summary>
 public static class SearchEndpoints
 {
   public static IEndpointRouteBuilder MapSearchEndpoints(this IEndpointRouteBuilder routes)
   {
-    var group = routes.MapGroup("/search");
+    var group = routes.MapGroup("/search")
+      .RequireAuthorization();
 
-    group.MapPost("/documents", async (SearchRequest request, SearchDocumentsHandler handler, CancellationToken ct) =>
+    group.MapPost("/documents", async (
+      SearchRequest request,
+      SearchDocumentsHandler handler,
+      ICurrentUser currentUser,
+      CancellationToken ct) =>
     {
-      var result = await handler.HandleAsync(new SearchDocumentsQuery(request.Query, request.Page, request.Size), ct);
+      var result = await handler.HandleAsync(
+        new SearchDocumentsQuery(request.Query, request.Page, request.Size,
+          OwnerId: currentUser.UserId, IsAdmin: currentUser.IsAdmin), ct);
+
       if (!result.IsSuccess || result.Value is null)
-      {
-        return Results.Ok(new PageResponse<SearchResultItemResponse>(Array.Empty<SearchResultItemResponse>(), request.Page, request.Size, 0));
-      }
+        return Results.Ok(new PageResponse<SearchResultItemResponse>([], request.Page, request.Size, 0));
 
       var page  = result.Value;
       var items = page.Items.Select(ToResponse).ToList();

@@ -1,9 +1,27 @@
-import { Outlet, NavLink } from 'react-router-dom'
-import { FileText, Search, Menu, X } from 'lucide-react'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { FileText, Search, Menu, X, Shield, LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '../contexts/AuthContext'
+import { initClient } from '../api/client'
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
+  const { user, logout, getToken } = useAuth()
+  const navigate = useNavigate()
+
+  // Wire up the API client with the current token and the 401 handler
+  initClient(getToken, () => navigate('/login', { replace: true }))
+
+  async function handleLogout() {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+
+  const navLinks = [
+    { to: '/documents', icon: FileText, label: 'Documents' },
+    { to: '/search', icon: Search, label: 'Search' },
+    ...(user?.role === 'Admin' ? [{ to: '/admin', icon: Shield, label: 'Admin' }] : []),
+  ]
 
   return (
     <div className="min-h-screen bg-slate-950 flex">
@@ -14,11 +32,9 @@ export default function Layout() {
           </div>
           <span className="text-white font-semibold text-lg">DocVault</span>
         </div>
+
         <nav className="flex-1 p-4 space-y-1">
-          {[
-            { to: '/documents', icon: FileText, label: 'Documents' },
-            { to: '/search', icon: Search, label: 'Search' },
-          ].map(({ to, icon: Icon, label }) => (
+          {navLinks.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -34,8 +50,40 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="p-4 border-t border-slate-800">
-          <p className="text-xs text-slate-600 text-center">DocVault v1</p>
+
+        <div className="p-4 border-t border-slate-800 space-y-3">
+          {user && (
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-indigo-600/30 flex items-center justify-center flex-shrink-0">
+                <span className="text-indigo-300 text-xs font-semibold uppercase">
+                  {(user.displayName || user.email)[0]}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-white text-xs font-medium truncate">
+                  {user.displayName || user.email}
+                </p>
+                <p className="text-slate-500 text-xs truncate">
+                  {user.isGuest ? 'Guest session' : user.role}
+                </p>
+              </div>
+            </div>
+          )}
+          {user?.isGuest && (
+            <NavLink
+              to="/register"
+              className="block w-full text-center text-xs bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-lg py-1.5 transition-colors"
+            >
+              Save your work — Register
+            </NavLink>
+          )}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 w-full text-slate-400 hover:text-white text-xs px-1 transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Sign out
+          </button>
         </div>
       </aside>
 

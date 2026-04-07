@@ -7,4 +7,5 @@ public sealed record ImportDocumentCommand(
   string ContentType,
   long Size,
   IReadOnlyCollection<string> Tags,
-  Stream Content);
+  Stream Content,
+  Guid? OwnerId = null);

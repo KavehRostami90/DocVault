@@ -76,10 +76,12 @@ try
   var v1 = app.MapGroup("/api/v{version:apiVersion}")
     .WithApiVersionSet(apiVersionSet);
 
+  v1.MapAuthEndpoints();
   v1.MapDocumentsEndpoints();
   v1.MapSearchEndpoints();
   v1.MapTagsEndpoints();
   v1.MapImportsEndpoints();
+  v1.MapAdminEndpoints();
   app.MapHealthEndpoints();
 
   app.Run();

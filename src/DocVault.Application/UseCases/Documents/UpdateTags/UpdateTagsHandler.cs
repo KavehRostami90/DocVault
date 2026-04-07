@@ -34,14 +34,13 @@ public sealed class UpdateTagsHandler
   {
     var doc = await _documents.GetAsync(command.Id, cancellationToken);
     if (doc is null)
-    {
       return Result.Failure(Errors.NotFound);
-    }
+
+    if (!command.IsAdmin && doc.OwnerId != command.CallerId)
+      return Result.Failure(Errors.NotFound);
 
     if (doc.IsFailed())
-    {
       return Result.Failure(Errors.Conflict);
-    }
 
     var tagEntities = new List<Tag>();
     foreach (var name in command.Tags)

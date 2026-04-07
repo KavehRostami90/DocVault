@@ -118,7 +118,11 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
             )}
           </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-4 py-3 space-y-1">
+              {error.split('\n').map((line, i) => <p key={i}>{line}</p>)}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-800">
