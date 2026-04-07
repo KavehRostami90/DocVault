@@ -1,31 +1,24 @@
-name: Deploy to Azure Web App
+name: Deploy to Test
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["CI"]
-    branches: [master]
-    types: [completed]
 
-# Only one deploy at a time; never cancel an in-progress deploy.
 concurrency:
-  group: deploy-production
+  group: deploy-test
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build & Deploy to Web App
+    name: Deploy to Test Environment
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment: test
 
     permissions:
-      id-token: write   # required for OIDC login
+      id-token: write
       contents: read
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -39,7 +32,7 @@ jobs:
           key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
           restore-keys: nuget-
 
-      - name: Publish app
+      - name: Publish API
         run: |
           dotnet publish src/DocVault.Api/DocVault.Api.csproj \
             -c Release \
@@ -48,6 +41,19 @@ jobs:
 
       - name: Zip publish output
         run: cd publish && zip -r ../app.zip .
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI
+        working-directory: ui
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm ci && npm run build
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -59,32 +65,42 @@ jobs:
       - name: Deploy infrastructure
         run: |
           az deployment group create \
-            --name docvault-infra-${{ github.run_id }} \
+            --name docvault-test-infra-${{ github.run_id }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
             --mode Incremental \
             --parameters \
-              appName=docvault \
+              appName=${{ vars.API_APP_NAME }} \
               databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
               openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
               corsAllowedOrigins="${{ vars.CORS_ALLOWED_ORIGINS }}" \
               jwtSigningKey="${{ secrets.AUTH_JWT_SIGNING_KEY }}" \
-              adminEmail="${{ vars.AUTH_ADMIN_EMAIL || 'admin@docvault.local' }}" \
+              adminEmail="${{ vars.AUTH_ADMIN_EMAIL }}" \
               adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}"
 
-      - name: Deploy app to Web App
+      - name: Deploy API to Web App
         run: |
           az webapp deploy \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name docvault \
+            --name ${{ vars.API_APP_NAME }} \
             --src-path app.zip \
             --type zip \
             --async false
 
-      - name: Print app URL
+      - name: Deploy UI to Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: ui
+          output_location: dist
+          skip_app_build: true
+
+      - name: Print app URLs
         run: |
-          URL=$(az webapp show \
+          API_URL=$(az webapp show \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name docvault \
+            --name ${{ vars.API_APP_NAME }} \
             --query defaultHostName -o tsv)
-          echo "App deployed to: https://$URL"
+          echo "API deployed to: https://$API_URL"
+          echo "UI deployed to: ${{ vars.CORS_ALLOWED_ORIGINS }}"

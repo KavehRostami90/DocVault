@@ -1,10 +1,14 @@
-name: CI
+name: CI — Build & Test
+
+# Runs on every PR targeting master and on every push to master.
+# This workflow is configured as a required status check in branch protection rules
+# so PRs cannot be merged until it passes.
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   build-and-test:
@@ -54,10 +58,16 @@ jobs:
         run: dotnet build DocVault.sln --no-restore --configuration Release
 
       - name: Unit tests
-        run: dotnet test tests/DocVault.UnitTests --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
+        run: >
+          dotnet test tests/DocVault.UnitTests
+          --no-build --configuration Release
+          --logger "trx;LogFileName=unit-tests.trx"
 
       - name: Integration tests
-        run: dotnet test tests/DocVault.IntegrationTests --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=integration-tests.trx"
+        run: >
+          dotnet test tests/DocVault.IntegrationTests
+          --no-build --configuration Release
+          --logger "trx;LogFileName=integration-tests.trx"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
