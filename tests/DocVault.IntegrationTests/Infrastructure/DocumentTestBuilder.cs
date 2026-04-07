@@ -13,6 +13,8 @@ public sealed class DocumentTestBuilder
     private string _content = "Test content";
     private string _fileName = DocumentTestConstants.DEFAULT_FILENAME;
     private string _contentType = DocumentTestConstants.DEFAULT_CONTENT_TYPE;
+    // Default to the test user so ownership filtering works out-of-the-box.
+    private Guid? _ownerId = TestAuthHandler.TestUserId;
 
     public DocumentTestBuilder WithTitle(string title)
     {
@@ -38,11 +40,17 @@ public sealed class DocumentTestBuilder
         return this;
     }
 
+    public DocumentTestBuilder WithOwnerId(Guid? ownerId)
+    {
+        _ownerId = ownerId;
+        return this;
+    }
+
     public Document Build()
     {
         var id = DocumentId.New();
         var hash = new FileHash(Guid.NewGuid().ToString("N"));
-        var document = new Document(id, _title, _fileName, _contentType, _content.Length, hash);
+        var document = new Document(id, _title, _fileName, _contentType, _content.Length, hash, _ownerId);
         document.AttachText(_content);
         document.MarkIndexed();
         return document;

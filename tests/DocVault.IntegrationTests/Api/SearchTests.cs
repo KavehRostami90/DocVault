@@ -251,7 +251,7 @@ public sealed class SearchTests : BaseIntegrationTest
   {
     var id   = DocumentId.New();
     var hash = new FileHash(Guid.NewGuid().ToString("N"));
-    var doc  = new Document(id, title, "seed.txt", "text/plain", text.Length, hash);
+    var doc  = new Document(id, title, "seed.txt", "text/plain", text.Length, hash, TestAuthHandler.TestUserId);
     doc.AttachText(text);
     doc.MarkIndexed();
     return doc;
