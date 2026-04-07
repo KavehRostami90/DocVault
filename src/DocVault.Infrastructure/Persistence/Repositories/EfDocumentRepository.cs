@@ -59,9 +59,12 @@ public class EfDocumentRepository : IDocumentRepository
   /// <param name="request">Pagination, filter, and sort parameters.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
   /// <returns>A <see cref="Page{T}"/> containing the matching documents.</returns>
-  public async Task<Page<Document>> ListAsync(PageRequest request, CancellationToken cancellationToken = default)
+  public async Task<Page<Document>> ListAsync(PageRequest request, Guid? ownerId = null, CancellationToken cancellationToken = default)
   {
     var query = _db.Documents.Include(d => d.Tags).AsQueryable();
+
+    if (ownerId.HasValue)
+      query = query.Where(d => d.OwnerId == ownerId);
 
     var filterRegistry = new Dictionary<string, Func<string, Expression<Func<Document, bool>>>>
     {
@@ -115,7 +118,7 @@ public class EfDocumentRepository : IDocumentRepository
   /// <param name="size">Page size.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
   /// <returns>A <see cref="Page{T}"/> of ranked <see cref="SearchResultItem"/> objects.</returns>
-  public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, CancellationToken cancellationToken = default)
+  public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, CancellationToken cancellationToken = default)
   {
     var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     if (terms.Length == 0)
@@ -129,11 +132,15 @@ public class EfDocumentRepository : IDocumentRepository
     {
       var tsQuery = string.Join(" | ", terms.Select(t => t.Replace("'", "''") + ":*"));
 
-      var docs = await _db.Documents
+      var docQuery = _db.Documents
         .Include(d => d.Tags)
         .Where(d => EF.Functions.ToTsVector("english", d.Text).Matches(
-          EF.Functions.ToTsQuery("english", tsQuery)))
-        .ToListAsync(cancellationToken);
+          EF.Functions.ToTsQuery("english", tsQuery)));
+
+      if (ownerId.HasValue)
+        docQuery = docQuery.Where(d => d.OwnerId == ownerId);
+
+      var docs = await docQuery.ToListAsync(cancellationToken);
 
       var items = docs
         .Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
@@ -148,6 +155,8 @@ public class EfDocumentRepository : IDocumentRepository
     // InMemory fallback used in tests — LIKE-style OR across title and text.
     IQueryable<Document> q = _db.Documents.Include(d => d.Tags);
     q = q.Where(BuildTermsFilter(terms));
+    if (ownerId.HasValue)
+      q = q.Where(d => d.OwnerId == ownerId);
     var total = await q.LongCountAsync(cancellationToken);
     var fallbackDocs = await q.ToListAsync(cancellationToken);
     var fallbackItems = fallbackDocs

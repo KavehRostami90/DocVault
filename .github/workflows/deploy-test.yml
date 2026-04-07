@@ -1,0 +1,105 @@
+name: Deploy to Test
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Test Environment
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
+          restore-keys: nuget-
+
+      - name: Publish API
+        run: |
+          dotnet publish src/DocVault.Api/DocVault.Api.csproj \
+            -c Release \
+            -o ./publish \
+            /p:UseAppHost=false
+
+      - name: Zip publish output
+        run: cd publish && zip -r ../app.zip .
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI
+        working-directory: ui
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm ci && npm run build
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy infrastructure
+        run: |
+          az deployment group create \
+            --name docvault-test-infra-${{ github.run_id }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file infra/main.bicep \
+            --mode Incremental \
+            --parameters \
+              appName=${{ vars.API_APP_NAME }} \
+              databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
+              openAiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+              corsAllowedOrigins="${{ vars.CORS_ALLOWED_ORIGINS }}" \
+              jwtSigningKey="${{ secrets.AUTH_JWT_SIGNING_KEY }}" \
+              adminEmail="${{ vars.AUTH_ADMIN_EMAIL }}" \
+              adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}"
+
+      - name: Deploy API to Web App
+        run: |
+          az webapp deploy \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ vars.API_APP_NAME }} \
+            --src-path app.zip \
+            --type zip \
+            --async false
+
+      - name: Deploy UI to Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: ui
+          output_location: dist
+          skip_app_build: true
+
+      - name: Print app URLs
+        run: |
+          API_URL=$(az webapp show \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ vars.API_APP_NAME }} \
+            --query defaultHostName -o tsv)
+          echo "API deployed to: https://$API_URL"
+          echo "UI deployed to: ${{ vars.CORS_ALLOWED_ORIGINS }}"

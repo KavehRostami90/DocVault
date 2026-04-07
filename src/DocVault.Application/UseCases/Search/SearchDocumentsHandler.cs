@@ -28,7 +28,8 @@ public sealed class SearchDocumentsHandler
   /// <returns>Result containing the page of search results.</returns>
   public async Task<Result<Page<SearchResultItem>>> HandleAsync(SearchDocumentsQuery query, CancellationToken cancellationToken = default)
   {
-    var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, cancellationToken);
+    var ownerId = query.IsAdmin ? null : query.OwnerId;
+    var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, ownerId, cancellationToken);
     return Result<Page<SearchResultItem>>.Success(page);
   }
 }

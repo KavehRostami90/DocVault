@@ -6,7 +6,6 @@ using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
 
-// Minimal bootstrap logger captures startup errors before full config loads
 Log.Logger = new LoggerConfiguration()
   .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
   .Enrich.FromLogContext()
@@ -19,7 +18,6 @@ try
 
   var builder = WebApplication.CreateBuilder(args);
 
-  // Full Serilog config is read from appsettings; ReadFrom.Services allows DI-registered enrichers/sinks
   builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services));
@@ -29,7 +27,6 @@ try
 
   var app = builder.Build();
 
-  // 1. Serilog outermost — wraps every request so all logs carry request context
   app.UseSerilogRequestLogging(options =>
   {
     options.GetLevel = (httpContext, _, ex) => ex is not null
@@ -49,16 +46,10 @@ try
     };
   });
 
-  // 2. CorrelationId — pushes property into Serilog LogContext for all downstream logs
   app.UseMiddleware<CorrelationIdMiddleware>();
-
-  // 3. ExceptionHandler — translates unhandled exceptions to problem+json responses
   app.UseExceptionHandler();
-
-  // 4. Rate limiting — enforced before endpoint routing
+  app.UseCors();
   app.UseRateLimiter();
-
-  // 5. Authentication / Authorization
   app.UseAuthentication();
   app.UseAuthorization();
 
@@ -77,8 +68,6 @@ try
   app.MapOpenApi();
   app.MapScalarApiReference();
 
-  // All versioned API endpoints live under /api/v{n}
-  // Health endpoints are infrastructure concerns and intentionally unversioned
   var apiVersionSet = app.NewApiVersionSet()
     .HasApiVersion(new ApiVersion(1, 0))
     .ReportApiVersions()
@@ -87,10 +76,12 @@ try
   var v1 = app.MapGroup("/api/v{version:apiVersion}")
     .WithApiVersionSet(apiVersionSet);
 
+  v1.MapAuthEndpoints();
   v1.MapDocumentsEndpoints();
   v1.MapSearchEndpoints();
   v1.MapTagsEndpoints();
   v1.MapImportsEndpoints();
+  v1.MapAdminEndpoints();
   app.MapHealthEndpoints();
 
   app.Run();
@@ -104,5 +95,4 @@ finally
   Log.CloseAndFlush();
 }
 
-// Exposes the implicit top-level Program class to the integration test project
 public partial class Program { }

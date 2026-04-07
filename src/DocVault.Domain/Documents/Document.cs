@@ -21,6 +21,8 @@ public class Document : AggregateRoot<DocumentId>
   public DocumentStatus Status { get; private set; }
   /// <summary>Set when the document enters the <see cref="DocumentStatus.Failed"/> state.</summary>
   public string? IndexingError { get; private set; }
+  /// <summary>Identity user id of the owner. Null for documents created before auth was introduced.</summary>
+  public Guid? OwnerId { get; private set; }
   public IReadOnlyCollection<Tag> Tags => _tags.AsReadOnly();
 
   private Document() : base(default)
@@ -32,7 +34,7 @@ public class Document : AggregateRoot<DocumentId>
     Hash = new FileHash(string.Empty);
   }
 
-  public Document(DocumentId id, string title, string fileName, string contentType, long size, FileHash hash) : base(id)
+  public Document(DocumentId id, string title, string fileName, string contentType, long size, FileHash hash, Guid? ownerId = null) : base(id)
   {
     SetTitle(title);
     SetFileName(fileName);
@@ -41,6 +43,7 @@ public class Document : AggregateRoot<DocumentId>
     Hash = hash;
     Text = string.Empty;
     Status = DocumentStatus.Pending;
+    OwnerId = ownerId;
   }
 
   public void AttachText(string text)

@@ -2,6 +2,8 @@ using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Background.Queue;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Storage;
+using DocVault.IntegrationTests.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +65,12 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
 
       // Restore the lightweight in-process queue; channel-backed, no Postgres needed.
       services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
+
+      // Replace the JWT auth setup with a no-op test handler so that
+      // RequireAuthorization() endpoints work without a real token.
+      // Every request is auto-signed in as a regular User (see TestAuthHandler).
+      services.AddAuthentication(TestAuthHandler.SchemeName)
+        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
 
       // Replace file storage with an isolated temp directory.
       services.RemoveAll<IFileStorage>();

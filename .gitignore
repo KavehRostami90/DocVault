@@ -23,8 +23,10 @@ coverage/
 *.clef
 
 # Secrets & local environment
-.env
-.env.*
+# .env.local and .env.*.local are machine-specific overrides — never commit them.
+# .env.production (non-secret Vite vars) is intentionally tracked.
+.env.local
+.env.*.local
 secrets/
 appsettings.*.Local.json
 
@@ -38,7 +40,8 @@ docker-compose.override.yml
 # Azurite local storage (Azure Storage emulator)
 __blobstorage__/
 __queuestorage__/
-# Azurite local storage (Azure Storage emulator)
-__blobstorage__/
-__queuestorage__/
 
+# UI — dependencies, build output, and TS incremental build cache
+ui/node_modules/
+ui/dist/
+ui/*.tsbuildinfo

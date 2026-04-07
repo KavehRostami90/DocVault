@@ -37,6 +37,14 @@ public static class ValidationConstants
         public const int DEFAULT_PAGE_SIZE = 20;
     }
     
+    public static class Auth
+    {
+        public const int MIN_PASSWORD_LENGTH = 8;
+        public const int MAX_PASSWORD_LENGTH = 128;
+        public const int MAX_EMAIL_LENGTH = 254;
+        public const int MAX_DISPLAY_NAME_LENGTH = 100;
+    }
+
     public static class Paging
     {
         public const int DEFAULT_PAGE = 1;

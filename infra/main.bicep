@@ -8,9 +8,6 @@ param appName string = 'docvault'
 @description('Azure region. Defaults to the resource group location.')
 param location string = resourceGroup().location
 
-@description('Container image to deploy, e.g. ghcr.io/kavehrostami90/docvault:latest')
-param containerImage string
-
 @description('PostgreSQL connection string (from Neon or other provider).')
 @secure()
 param databaseConnectionString string
@@ -19,87 +16,77 @@ param databaseConnectionString string
 @secure()
 param openAiApiKey string = ''
 
-// Conditionally include OpenAI secret only when a key is provided
-var useOpenAi = !empty(openAiApiKey)
-var baseSecrets = [
-  { name: 'db-connection-string', value: databaseConnectionString }
+@description('Comma-separated allowed CORS origins. Must be set to the Static Web App URL in production.')
+param corsAllowedOrigins string = ''
+
+@description('JWT signing key — minimum 32 characters. Must be kept secret.')
+@secure()
+param jwtSigningKey string
+
+@description('Email address for the seeded admin account.')
+param adminEmail string = 'admin@docvault.local'
+
+@description('Password for the seeded admin account.')
+@secure()
+param adminPassword string
+
+// ── App Settings ───────────────────────────────────────────────────────────
+
+var baseAppSettings = [
+  { name: 'ASPNETCORE_ENVIRONMENT',      value: 'Production' }
+  { name: 'ASPNETCORE_URLS',             value: 'http://+:8080' }
+  { name: 'ConnectionStrings__Database', value: databaseConnectionString }
+  { name: 'Cors__AllowedOrigins',        value: corsAllowedOrigins }
+  { name: 'Auth__JwtSigningKey',         value: jwtSigningKey }
+  { name: 'Auth__JwtIssuer',             value: 'docvault' }
+  { name: 'Auth__JwtAudience',           value: 'docvault-ui' }
+  { name: 'Auth__AccessTokenExpiryMinutes', value: '15' }
+  { name: 'Auth__RefreshTokenExpiryDays',   value: '7' }
+  { name: 'Auth__AdminEmail',            value: adminEmail }
+  { name: 'Auth__AdminPassword',         value: adminPassword }
+  { name: 'OpenAI__Model',               value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',          value: '1536' }
 ]
-var openAiSecret = useOpenAi ? [{ name: 'openai-api-key', value: openAiApiKey }] : []
-var allSecrets = concat(baseSecrets, openAiSecret)
 
-var baseEnvVars = [
-  { name: 'ASPNETCORE_ENVIRONMENT',     value: 'Production' }
-  { name: 'ConnectionStrings__Database', secretRef: 'db-connection-string' }
-  { name: 'OpenAI__Model',              value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',         value: '1536' }
-]
-var openAiEnvVar = useOpenAi ? [{ name: 'OpenAI__ApiKey', secretRef: 'openai-api-key' }] : []
-var allEnvVars = concat(baseEnvVars, openAiEnvVar)
+var allAppSettings = !empty(openAiApiKey)
+  ? concat(baseAppSettings, [{ name: 'OpenAI__ApiKey', value: openAiApiKey }])
+  : baseAppSettings
 
-// ── Existing Container Apps Environment (pre-provisioned by env.bicep) ──────
+// ── App Service Plan ───────────────────────────────────────────────────────
+// F1 (Free) has no "Always On" — upgrade to B1 for production workloads.
 
-resource env 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
-  name: '${appName}-env'
+resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
+  name: '${appName}-plan'
+  location: location
+  kind: 'linux'
+  sku: {
+    name: 'F1'
+    tier: 'Free'
+  }
+  properties: {
+    reserved: true
+  }
 }
 
-// ── Container App ───────────────────────────────────────────────────────────
+// ── Web App ────────────────────────────────────────────────────────────────
 
-resource app 'Microsoft.App/containerApps@2024-03-01' = {
+resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
   location: location
+  kind: 'app,linux'
   properties: {
-    managedEnvironmentId: env.id
-    configuration: {
-      ingress: {
-        external: true
-        targetPort: 8080
-        transport: 'http'
-      }
-      secrets: allSecrets
-    }
-    template: {
-      containers: [
-        {
-          name: appName
-          image: containerImage
-          resources: {
-            // Consumption plan free grant covers ~180K vCPU-s/month
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-          env: allEnvVars
-          probes: [
-            {
-              type: 'Liveness'
-              httpGet: { path: '/health/alive', port: 8080, scheme: 'HTTP' }
-              initialDelaySeconds: 5
-              periodSeconds: 15
-              failureThreshold: 3
-            }
-            {
-              type: 'Readiness'
-              httpGet: { path: '/health/ready', port: 8080, scheme: 'HTTP' }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-              failureThreshold: 3
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 0   // scale-to-zero keeps costs at zero when idle
-        maxReplicas: 3
-        rules: [
-          {
-            name: 'http-scaling'
-            http: { metadata: { concurrentRequests: '20' } }
-          }
-        ]
-      }
+    serverFarmId: plan.id
+    httpsOnly: true
+    siteConfig: {
+      linuxFxVersion: 'DOTNETCORE|10.0'
+      appCommandLine: 'dotnet DocVault.Api.dll'
+      healthCheckPath: '/health/live'
+      appSettings: allAppSettings
     }
   }
 }
 
-// ── Outputs ─────────────────────────────────────────────────────────────────
+// ── Outputs ────────────────────────────────────────────────────────────────
 
-output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
+output appUrl string = 'https://${app.properties.defaultHostName}'
+output appName string = app.name

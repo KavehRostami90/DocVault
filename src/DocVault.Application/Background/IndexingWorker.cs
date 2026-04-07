@@ -42,8 +42,15 @@ public sealed partial class IndexingWorker : BackgroundService
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
-    // Recover jobs that were queued but never processed (e.g. process crash).
-    await RecoverPendingJobsAsync(stoppingToken);
+    try
+    {
+      // Recover jobs that were queued but never processed (e.g. process crash).
+      await RecoverPendingJobsAsync(stoppingToken);
+    }
+    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+    {
+      return;
+    }
 
     while (!stoppingToken.IsCancellationRequested)
     {

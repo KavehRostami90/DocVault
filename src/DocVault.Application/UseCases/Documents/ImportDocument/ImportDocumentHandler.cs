@@ -56,7 +56,7 @@ public sealed class ImportDocumentHandler
     await _storage.WriteAsync(storagePath, buffer, cancellationToken);
 
     var tags = command.Tags.Select(t => new Tag(Guid.NewGuid(), t));
-    var document = new Document(documentId, command.Title, command.FileName, command.ContentType, command.Size, hash);
+    var document = new Document(documentId, command.Title, command.FileName, command.ContentType, command.Size, hash, command.OwnerId);
     document.ReplaceTags(tags);
     document.MarkImported();
     await _documents.AddAsync(document, cancellationToken);

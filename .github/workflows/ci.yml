@@ -1,10 +1,14 @@
-name: CI
+name: CI — Build & Test
+
+# Runs on every PR targeting master and on every push to master.
+# This workflow is configured as a required status check in branch protection rules
+# so PRs cannot be merged until it passes.
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   build-and-test:
@@ -28,6 +32,9 @@ jobs:
 
     env:
       ConnectionStrings__Database: "Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault"
+      Auth__JwtSigningKey: "ci-test-signing-key-minimum-32-chars!!"
+      Auth__AdminEmail: "admin@docvault.local"
+      Auth__AdminPassword: "Admin1234!"
 
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +44,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
+          restore-keys: nuget-
+
       - name: Restore dependencies
         run: dotnet restore DocVault.sln
 
@@ -44,10 +58,16 @@ jobs:
         run: dotnet build DocVault.sln --no-restore --configuration Release
 
       - name: Unit tests
-        run: dotnet test tests/DocVault.UnitTests --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
+        run: >
+          dotnet test tests/DocVault.UnitTests
+          --no-build --configuration Release
+          --logger "trx;LogFileName=unit-tests.trx"
 
       - name: Integration tests
-        run: dotnet test tests/DocVault.IntegrationTests --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=integration-tests.trx"
+        run: >
+          dotnet test tests/DocVault.IntegrationTests
+          --no-build --configuration Release
+          --logger "trx;LogFileName=integration-tests.trx"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4

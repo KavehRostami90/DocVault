@@ -24,6 +24,8 @@ public class DocumentConfiguration : IEntityTypeConfiguration<Document>
     builder.Property(x => x.Hash)
       .HasConversion(hash => hash.Value, value => new FileHash(value));
     builder.Property(x => x.Text).HasColumnType("text");
+    builder.Property(x => x.OwnerId).IsRequired(false);
+    builder.HasIndex(x => x.OwnerId);
     builder.HasMany(x => x.Tags)
       .WithMany();
   }
