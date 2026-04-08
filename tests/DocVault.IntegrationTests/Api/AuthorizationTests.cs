@@ -39,8 +39,12 @@ public sealed class AuthorizationTests : IClassFixture<DocVaultFactory>
                 // Remove the test auth override so real JWT validation runs
                 services.Configure<AuthenticationOptions>(opts =>
                 {
+                    // Empty scheme name → GetSchemeAsync returns null → auth middleware skips
+                    // authentication, leaving an anonymous user.
                     opts.DefaultAuthenticateScheme = string.Empty;
-                    opts.DefaultChallengeScheme    = string.Empty;
+                    // Must point to a real registered scheme so the authorization middleware
+                    // can challenge the anonymous user and return 401 instead of throwing.
+                    opts.DefaultChallengeScheme = TestAuthHandler.SchemeName;
                 });
             }));
 

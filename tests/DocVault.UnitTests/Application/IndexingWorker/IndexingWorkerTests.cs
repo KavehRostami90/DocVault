@@ -24,8 +24,12 @@ public sealed class IndexingWorkerTests
     // -------------------------------------------------------------------------
 
     private static Document MakeDocument(DocumentId id)
-        => new(id, "Test Document", "test.txt", "text/plain", 100,
-               new FileHash("abc123"));
+    {
+        var doc = new Document(id, "Test Document", "test.txt", "text/plain", 100,
+                               new FileHash("abc123"));
+        doc.MarkImported(); // worker always receives documents already in Imported state
+        return doc;
+    }
 
     private static ImportJob MakeJob(DocumentId documentId, Guid? jobId = null)
         => new(jobId ?? Guid.NewGuid(), documentId,
