@@ -44,14 +44,14 @@ export default function AdminOverviewTab() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Total Documents" value={s.totalDocuments} icon={<FileText className="w-5 h-5" />} />
         {Object.entries(s.documentsByStatus).map(([status, count]) => (
-          <StatCard key={status} label={status} value={count} icon={<FileText className="w-5 h-5" />} colour={statusColour(status)} />
+          <StatCard key={status} label={status} value={count} icon={<FileText className="w-5 h-5" />} colour={statusColor(status)} />
         ))}
       </div>
     </div>
   )
 }
 
-function statusColour(status: string): string {
+function statusColor(status: string): string {
   switch (status.toLowerCase()) {
     case 'indexed':  return 'emerald'
     case 'failed':   return 'red'
