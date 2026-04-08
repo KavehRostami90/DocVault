@@ -1,4 +1,5 @@
 using DocVault.Application.Abstractions.Persistence;
+using DocVault.Domain.Documents;
 using DocVault.Domain.Imports;
 using Microsoft.EntityFrameworkCore;
 
@@ -55,4 +56,10 @@ public class EfImportJobRepository : IImportJobRepository
     _db.ImportJobs.Update(job);
     await _db.SaveChangesAsync(cancellationToken);
   }
+
+  public Task<ImportJob?> GetLatestByDocumentIdAsync(DocumentId documentId, CancellationToken cancellationToken = default)
+    => _db.ImportJobs
+      .Where(j => j.DocumentId == documentId)
+      .OrderByDescending(j => j.StartedAt)
+      .FirstOrDefaultAsync(cancellationToken);
 }

@@ -11,7 +11,7 @@ namespace DocVault.Api.Mappers;
 public static class DocumentResponseMapper
 {
   public static DocumentListItemResponse ToListItem(Document doc)
-    => new(doc.Id.Value, doc.Title, doc.FileName, doc.Status.ToString());
+    => new(doc.Id.Value, doc.Title, doc.FileName, doc.Status.ToString(), doc.Size, doc.CreatedAt, doc.OwnerId);
 
   public static DocumentReadResponse ToRead(Document doc)
     => new(doc.Id.Value, doc.Title, doc.FileName, doc.ContentType, doc.Size, doc.Status.ToString(), doc.Tags.Select(t => t.Name).ToList());

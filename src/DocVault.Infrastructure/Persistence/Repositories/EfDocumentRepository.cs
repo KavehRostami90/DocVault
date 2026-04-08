@@ -190,6 +190,16 @@ public class EfDocumentRepository : IDocumentRepository
     return Expression.Lambda<Func<Document, bool>>(body!, param);
   }
 
+  public async Task<Dictionary<string, long>> GetCountsByStatusAsync(CancellationToken cancellationToken = default)
+  {
+    var rows = await _db.Documents
+      .GroupBy(d => d.Status)
+      .Select(g => new { Status = g.Key, Count = (long)g.Count() })
+      .ToListAsync(cancellationToken);
+
+    return rows.ToDictionary(x => x.Status.ToString(), x => x.Count);
+  }
+
   // Lightweight keyword relevance: title hits worth 1.0 each, body hits worth 0.3 each, normalised to [0, 1].
   private static double ComputeScore(Document doc, string[] terms)
   {
