@@ -71,7 +71,7 @@ public static class DependencyInjection
         new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
     }
 
-    services.AddSingleton<ITextExtractor, PlainTextExtractor>();
+    services.AddSingleton<ITextExtractor, CompositeTextExtractor>();
 
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
     if (openAiOptions.IsConfigured)

@@ -1,6 +1,30 @@
 import { useState, useRef } from 'react'
-import { X, Upload, FileText, Plus, Tag } from 'lucide-react'
+import { X, Upload, Plus, Tag } from 'lucide-react'
 import { uploadDocument } from '../api/documents'
+
+const ACCEPTED_MIME_TYPES = [
+  'application/pdf',
+  'text/plain',
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+
+const ACCEPTED_EXTENSIONS = '.pdf,.txt,.md,.docx,.json'
+
+const FILE_TYPE_LABELS: Record<string, string> = {
+  'application/pdf': 'PDF',
+  'text/plain': 'TXT',
+  'text/markdown': 'MD',
+  'text/x-markdown': 'MD',
+  'application/json': 'JSON',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+}
+
+function getFileTypeLabel(mimeType: string): string {
+  return FILE_TYPE_LABELS[mimeType] ?? mimeType
+}
 
 interface Props {
   onClose: () => void
@@ -18,6 +42,11 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = (f: File) => {
+    if (!ACCEPTED_MIME_TYPES.includes(f.type)) {
+      setError(`Unsupported file type "${f.type || f.name.split('.').pop()}". Allowed: PDF, TXT, MD, DOCX`)
+      return
+    }
+    setError(null)
     setFile(f)
     setTitle(prev => prev || f.name.replace(/\.[^.]+$/, ''))
   }
@@ -62,10 +91,12 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
               dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/50'
             }`}
           >
-            <input ref={inputRef} type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+            <input ref={inputRef} type="file" className="hidden" accept={ACCEPTED_EXTENSIONS} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
             {file ? (
               <div className="flex items-center justify-center gap-3">
-                <FileText className="w-8 h-8 text-indigo-400" />
+                <div className="w-10 h-10 bg-indigo-600/20 rounded-lg flex items-center justify-center shrink-0">
+                  <span className="text-indigo-400 text-xs font-bold">{getFileTypeLabel(file.type)}</span>
+                </div>
                 <div className="text-left">
                   <p className="text-white font-medium text-sm">{file.name}</p>
                   <p className="text-slate-500 text-xs">{(file.size / 1024).toFixed(1)} KB</p>
@@ -75,6 +106,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
               <>
                 <Upload className="w-8 h-8 text-slate-500 mx-auto mb-3" />
                 <p className="text-slate-400 text-sm">Drop a file here or <span className="text-indigo-400">browse</span></p>
+                <p className="text-slate-600 text-xs mt-1">PDF, DOCX, TXT, MD, JSON · Max 50 MB</p>
               </>
             )}
           </div>
