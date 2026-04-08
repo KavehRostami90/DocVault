@@ -1,0 +1,64 @@
+using System.Linq.Expressions;
+using DocVault.Application.Common.Paging;
+using DocVault.Application.UseCases.Search;
+using DocVault.Domain.Documents;
+using Microsoft.EntityFrameworkCore;
+
+namespace DocVault.Infrastructure.Persistence.Repositories;
+
+/// <summary>
+/// In-memory LIKE-style search strategy used by the EF Core in-memory provider
+/// (integration tests and local development without Postgres).
+/// </summary>
+internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
+{
+  public bool CanHandle(DocVaultDbContext db) => true; // fallback — always matches
+
+  public async Task<Page<SearchResultItem>> SearchAsync(
+    DocVaultDbContext db,
+    string[] terms,
+    int page,
+    int size,
+    Guid? ownerId,
+    CancellationToken ct)
+  {
+    IQueryable<Document> query = db.Documents.Include(d => d.Tags);
+    query = query.Where(BuildOrFilter(terms));
+
+    if (ownerId.HasValue)
+      query = query.Where(d => d.OwnerId == ownerId);
+
+    var total = await query.LongCountAsync(ct);
+    var docs  = await query.ToListAsync(ct);
+
+    var items = docs
+      .Select(d => new SearchResultItem(d, DocumentScorer.Compute(d, terms)))
+      .OrderByDescending(i => i.Score)
+      .Skip((page - 1) * size)
+      .Take(size)
+      .ToList();
+
+    return new Page<SearchResultItem>(items, page, size, total);
+  }
+
+  // Builds: d => (d.Title.Contains(t1) || d.Text.Contains(t1)) || ...
+  private static Expression<Func<Document, bool>> BuildOrFilter(string[] terms)
+  {
+    var param       = Expression.Parameter(typeof(Document), "d");
+    var titleProp   = Expression.Property(param, nameof(Document.Title));
+    var textProp    = Expression.Property(param, nameof(Document.Text));
+    var containsMeth = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+
+    Expression? body = null;
+    foreach (var term in terms)
+    {
+      var literal    = Expression.Constant(term);
+      var titleHit   = Expression.Call(titleProp, containsMeth, literal);
+      var textHit    = Expression.Call(textProp,  containsMeth, literal);
+      var termClause = Expression.OrElse(titleHit, textHit);
+      body = body is null ? termClause : Expression.OrElse(body, termClause);
+    }
+
+    return Expression.Lambda<Func<Document, bool>>(body!, param);
+  }
+}

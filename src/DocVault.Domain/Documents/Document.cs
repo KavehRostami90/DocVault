@@ -54,25 +54,41 @@ public class Document : AggregateRoot<DocumentId>
 
   public void MarkIndexed()
   {
+    if (Status != DocumentStatus.Imported)
+      throw new DomainException(DomainErrorCodes.InvalidStateTransition,
+        $"Cannot mark document as Indexed from {Status} state — must be Imported first.");
+
     Status = DocumentStatus.Indexed;
+    Touch();
     RaiseDomainEvent(new DocumentIndexed(Id));
   }
 
   public void MarkImported()
   {
+    if (Status != DocumentStatus.Pending)
+      throw new DomainException(DomainErrorCodes.InvalidStateTransition,
+        $"Cannot mark document as Imported from {Status} state — must be Pending.");
+
     Status = DocumentStatus.Imported;
+    Touch();
     RaiseDomainEvent(new DocumentImported(Id));
   }
 
   public void MarkFailed(string? error = null)
   {
+    if (Status is DocumentStatus.Indexed or DocumentStatus.Failed)
+      throw new DomainException(DomainErrorCodes.InvalidStateTransition,
+        $"Cannot mark a {Status} document as Failed.");
+
     Status = DocumentStatus.Failed;
     IndexingError = error;
+    Touch();
+    RaiseDomainEvent(new DocumentFailed(Id, error));
   }
 
   public void ReplaceTags(IEnumerable<Tag> tags)
   {
-    var tagsList = tags?.ToList() ?? throw new DomainException(DomainErrorCodes.TagsRequired, "Tags cannot be null");
+    var tagsList = tags.ToList();
 
     if (tagsList.Count > ValidationConstants.Tags.MAX_TAGS_PER_DOCUMENT)
       throw new DomainException(DomainErrorCodes.TagLimitExceeded, $"Cannot have more than {ValidationConstants.Tags.MAX_TAGS_PER_DOCUMENT} tags");

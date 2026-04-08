@@ -18,6 +18,7 @@ public sealed class ImportDocumentHandler
   private readonly IImportJobRepository _imports;
   private readonly IFileStorage _storage;
   private readonly IWorkQueue<IndexingWorkItem> _queue;
+  private readonly IUnitOfWork _unitOfWork;
 
   /// <summary>
   /// Initializes the handler with required repositories and services.
@@ -26,12 +27,14 @@ public sealed class ImportDocumentHandler
     IDocumentRepository documents,
     IImportJobRepository imports,
     IFileStorage storage,
-    IWorkQueue<IndexingWorkItem> queue)
+    IWorkQueue<IndexingWorkItem> queue,
+    IUnitOfWork unitOfWork)
   {
-    _documents = documents;
-    _imports   = imports;
-    _storage   = storage;
-    _queue     = queue;
+    _documents  = documents;
+    _imports    = imports;
+    _storage    = storage;
+    _queue      = queue;
+    _unitOfWork = unitOfWork;
   }
 
   /// <summary>
@@ -46,28 +49,39 @@ public sealed class ImportDocumentHandler
 
     // Buffer the entire upload so we can (a) compute hash and (b) write to storage
     // without reading the HTTP stream twice.
-    using var buffer = new MemoryStream((int)Math.Min(command.Size, int.MaxValue));
+    using var buffer = new MemoryStream();
     await command.Content.CopyToAsync(buffer, cancellationToken);
 
-    var hash = FileHash.FromBytes(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)));
+    var hash        = ComputeHash(buffer);
     var storagePath = $"{documentId.Value}.bin";
 
     buffer.Position = 0;
     await _storage.WriteAsync(storagePath, buffer, cancellationToken);
 
-    var tags = command.Tags.Select(t => new Tag(Guid.NewGuid(), t));
+    var tags     = command.Tags.Select(t => new Tag(Guid.NewGuid(), t));
     var document = new Document(documentId, command.Title, command.FileName, command.ContentType, command.Size, hash, command.OwnerId);
     document.ReplaceTags(tags);
     document.MarkImported();
-    await _documents.AddAsync(document, cancellationToken);
 
-    // Persist the job with enough data for crash-recovery re-enqueue.
+    // Persist document and import job in a single transaction so the system
+    // never ends up with a document without a corresponding job (or vice-versa).
     var job = new ImportJob(Guid.NewGuid(), documentId, command.FileName, storagePath, command.ContentType);
-    await _imports.AddAsync(job, cancellationToken);
+    await _unitOfWork.ExecuteInTransactionAsync(async ct =>
+    {
+      await _documents.AddAsync(document, ct);
+      await _imports.AddAsync(job, ct);
+    }, cancellationToken);
 
     // Hand off to the background indexing pipeline.
     _queue.Enqueue(new IndexingWorkItem(job.Id, storagePath, command.ContentType));
 
     return Result<DocumentId>.Success(documentId);
+  }
+
+  /// <summary>Computes a SHA-256 hash of the buffered content without re-reading.</summary>
+  private static FileHash ComputeHash(MemoryStream buffer)
+  {
+    var hashBytes = SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
+    return FileHash.FromBytes(hashBytes);
   }
 }

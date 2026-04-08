@@ -1,4 +1,5 @@
 using DocVault.Application.Abstractions.Persistence;
+using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Common.Results;
 
 namespace DocVault.Application.UseCases.Admin;
@@ -21,51 +22,38 @@ public sealed record AdminStatsDto(
   Dictionary<string, long> DocumentsByStatus);
 
 /// <summary>
-/// Handles <see cref="GetAdminStatsQuery"/> by combining user counts (supplied by
-/// the caller) with document counts fetched from the repository.
+/// Handles <see cref="GetAdminStatsQuery"/> by aggregating user counts from
+/// <see cref="IUserQueryService"/> and document counts from <see cref="IDocumentRepository"/>.
+/// All data is fetched here — no computation is performed in the API layer.
 /// </summary>
-/// <remarks>
-/// User counts are passed as explicit parameters rather than being resolved here
-/// because <c>UserManager&lt;ApplicationUser&gt;</c> belongs to the Infrastructure layer
-/// and cannot be injected into Application handlers.
-/// </remarks>
 public sealed class GetAdminStatsHandler
 {
   private readonly IDocumentRepository _documents;
+  private readonly IUserQueryService _users;
 
-  public GetAdminStatsHandler(IDocumentRepository documents)
+  public GetAdminStatsHandler(IDocumentRepository documents, IUserQueryService users)
   {
     _documents = documents;
+    _users     = users;
   }
 
   /// <summary>
-  /// Builds and returns an <see cref="AdminStatsDto"/> combining the supplied user
-  /// counts with live document counts from the repository.
+  /// Builds and returns an <see cref="AdminStatsDto"/> combining live user and document counts.
   /// </summary>
-  /// <param name="query">The query (currently a marker record with no data).</param>
-  /// <param name="totalUsers">Total number of user accounts.</param>
-  /// <param name="guestUsers">Number of guest user accounts.</param>
-  /// <param name="registeredUsers">Number of fully-registered (non-guest) user accounts.</param>
-  /// <param name="adminUsers">Number of users that hold the Admin role.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>A successful <see cref="Result{T}"/> wrapping the stats DTO.</returns>
   public async Task<Result<AdminStatsDto>> HandleAsync(
     GetAdminStatsQuery query,
-    int totalUsers,
-    int guestUsers,
-    int registeredUsers,
-    int adminUsers,
     CancellationToken cancellationToken = default)
   {
+    var userCounts     = await _users.GetCountsAsync(cancellationToken);
     var countsByStatus = await _documents.GetCountsByStatusAsync(cancellationToken);
-    var total = countsByStatus.Values.Sum();
+    var totalDocuments = countsByStatus.Values.Sum();
 
     var dto = new AdminStatsDto(
-      TotalUsers: totalUsers,
-      GuestUsers: guestUsers,
-      RegisteredUsers: registeredUsers,
-      AdminUsers: adminUsers,
-      TotalDocuments: total,
+      TotalUsers:       userCounts.Total,
+      GuestUsers:       userCounts.Guests,
+      RegisteredUsers:  userCounts.Total - userCounts.Guests,
+      AdminUsers:       userCounts.Admins,
+      TotalDocuments:   totalDocuments,
       DocumentsByStatus: countsByStatus);
 
     return Result<AdminStatsDto>.Success(dto);

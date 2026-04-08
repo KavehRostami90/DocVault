@@ -6,18 +6,28 @@ using DocVault.Application.UseCases.Search;
 using DocVault.Domain.Common;
 using DocVault.Domain.Documents;
 using Microsoft.EntityFrameworkCore;
-using NpgsqlTypes;
 
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// EF Core implementation of <see cref="IDocumentRepository"/>.
 /// Provides CRUD operations, paginated listing with dynamic filter/sort,
-/// and keyword-based full-text search using expression trees.
+/// and keyword-based full-text search delegated to <see cref="IDocumentSearchStrategy"/> implementations.
 /// </summary>
 public class EfDocumentRepository : IDocumentRepository
 {
   private readonly DocVaultDbContext _db;
+
+  // Filter predicates are built once and reused across requests.
+  private static readonly IReadOnlyDictionary<string, Func<string, Expression<Func<Document, bool>>>>
+    _filterRegistry = DocumentFilterRegistry.Build();
+
+  // Strategies are tried in order; the first whose CanHandle returns true wins.
+  private static readonly IReadOnlyList<IDocumentSearchStrategy> _searchStrategies =
+  [
+    new PostgresSearchStrategy(),
+    new InMemorySearchStrategy(),
+  ];
 
   /// <summary>Initialises the repository with the scoped database context.</summary>
   /// <param name="db">The EF Core database context for this request scope.</param>
@@ -27,8 +37,6 @@ public class EfDocumentRepository : IDocumentRepository
   }
 
   /// <summary>Persists a new <see cref="Document"/> and saves changes.</summary>
-  /// <param name="document">The document aggregate to add.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
   public async Task AddAsync(Document document, CancellationToken cancellationToken = default)
   {
     await _db.Documents.AddAsync(document, cancellationToken);
@@ -36,8 +44,6 @@ public class EfDocumentRepository : IDocumentRepository
   }
 
   /// <summary>Removes a <see cref="Document"/> and saves changes.</summary>
-  /// <param name="document">The document aggregate to delete.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
   public async Task DeleteAsync(Document document, CancellationToken cancellationToken = default)
   {
     _db.Documents.Remove(document);
@@ -45,9 +51,6 @@ public class EfDocumentRepository : IDocumentRepository
   }
 
   /// <summary>Retrieves a single <see cref="Document"/> by its identifier, including its tags.</summary>
-  /// <param name="id">The document identifier.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>The matching document, or <c>null</c> if not found.</returns>
   public Task<Document?> GetAsync(DocumentId id, CancellationToken cancellationToken = default)
     => _db.Documents.Include(d => d.Tags).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
@@ -56,9 +59,6 @@ public class EfDocumentRepository : IDocumentRepository
   /// Supported filter keys: <c>title</c>, <c>status</c>, <c>tag</c>.
   /// Supported sort keys: <c>title</c>, <c>fileName</c>, <c>size</c>, <c>status</c>, <c>createdAt</c>, <c>updatedAt</c>.
   /// </summary>
-  /// <param name="request">Pagination, filter, and sort parameters.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>A <see cref="Page{T}"/> containing the matching documents.</returns>
   public async Task<Page<Document>> ListAsync(PageRequest request, Guid? ownerId = null, CancellationToken cancellationToken = default)
   {
     var query = _db.Documents.Include(d => d.Tags).AsQueryable();
@@ -66,21 +66,7 @@ public class EfDocumentRepository : IDocumentRepository
     if (ownerId.HasValue)
       query = query.Where(d => d.OwnerId == ownerId);
 
-    var filterRegistry = new Dictionary<string, Func<string, Expression<Func<Document, bool>>>>
-    {
-      ["title"] = value => d => d.Title.Contains(value),
-      ["status"] = value =>
-      {
-        if (Enum.TryParse<DocumentStatus>(value, true, out var status))
-        {
-          return d => d.Status == status;
-        }
-        return d => true;
-      },
-      ["tag"] = value => d => d.Tags.Any(t => t.Name.Contains(value))
-    };
-
-    query = FilterBuilder.Apply(query, request.Filters, filterRegistry);
+    query = FilterBuilder.Apply(query, request.Filters, _filterRegistry);
 
     var sortRegistry = new Dictionary<string, Expression<Func<Document, object>>>
     {
@@ -100,8 +86,6 @@ public class EfDocumentRepository : IDocumentRepository
   }
 
   /// <summary>Updates an existing <see cref="Document"/> and saves changes.</summary>
-  /// <param name="document">The document aggregate with updated state.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
   public async Task UpdateAsync(Document document, CancellationToken cancellationToken = default)
   {
     _db.Documents.Update(document);
@@ -109,87 +93,20 @@ public class EfDocumentRepository : IDocumentRepository
   }
 
   /// <summary>
-  /// Performs an in-database keyword search across document titles and extracted text.
-  /// Each term is OR-ed; results are ranked by a lightweight relevance score
-  /// (title match = 1.0, body match = 0.3) and returned as a paginated page.
+  /// Performs a keyword search, delegating to the first applicable
+  /// <see cref="IDocumentSearchStrategy"/> for the active database provider.
   /// </summary>
-  /// <param name="query">Whitespace-delimited search terms.</param>
-  /// <param name="page">1-based page number.</param>
-  /// <param name="size">Page size.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>A <see cref="Page{T}"/> of ranked <see cref="SearchResultItem"/> objects.</returns>
   public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, CancellationToken cancellationToken = default)
   {
     var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     if (terms.Length == 0)
-    {
       return new Page<SearchResultItem>([], page, size, 0);
-    }
 
-    // Use PostgreSQL full-text search when running against a real database.
-    // The OR-prefix query (term:*) enables prefix matching on each token.
-    if (_db.Database.IsRelational())
-    {
-      var tsQuery = string.Join(" | ", terms.Select(t => t.Replace("'", "''") + ":*"));
-
-      var docQuery = _db.Documents
-        .Include(d => d.Tags)
-        .Where(d => EF.Functions.ToTsVector("english", d.Text).Matches(
-          EF.Functions.ToTsQuery("english", tsQuery)));
-
-      if (ownerId.HasValue)
-        docQuery = docQuery.Where(d => d.OwnerId == ownerId);
-
-      var docs = await docQuery.ToListAsync(cancellationToken);
-
-      var items = docs
-        .Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
-        .OrderByDescending(i => i.Score)
-        .Skip((page - 1) * size)
-        .Take(size)
-        .ToList();
-
-      return new Page<SearchResultItem>(items, page, size, docs.Count);
-    }
-
-    // InMemory fallback used in tests — LIKE-style OR across title and text.
-    IQueryable<Document> q = _db.Documents.Include(d => d.Tags);
-    q = q.Where(BuildTermsFilter(terms));
-    if (ownerId.HasValue)
-      q = q.Where(d => d.OwnerId == ownerId);
-    var total = await q.LongCountAsync(cancellationToken);
-    var fallbackDocs = await q.ToListAsync(cancellationToken);
-    var fallbackItems = fallbackDocs
-      .Select(d => new SearchResultItem(d, ComputeScore(d, terms)))
-      .OrderByDescending(item => item.Score)
-      .Skip((page - 1) * size)
-      .Take(size)
-      .ToList();
-    return new Page<SearchResultItem>(fallbackItems, page, size, total);
+    var strategy = _searchStrategies.First(s => s.CanHandle(_db));
+    return await strategy.SearchAsync(_db, terms, page, size, ownerId, cancellationToken);
   }
 
-  // Builds: d => (d.Title.Contains(t1) || d.Text.Contains(t1))
-  //           || (d.Title.Contains(t2) || d.Text.Contains(t2)) ...
-  private static Expression<Func<Document, bool>> BuildTermsFilter(string[] terms)
-  {
-    var param        = Expression.Parameter(typeof(Document), "d");
-    var titleProp    = Expression.Property(param, nameof(Document.Title));
-    var textProp     = Expression.Property(param, nameof(Document.Text));
-    var containsMeth = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
-
-    Expression? body = null;
-    foreach (var term in terms)
-    {
-      var literal    = Expression.Constant(term);
-      var titleHit   = Expression.Call(titleProp, containsMeth, literal);
-      var textHit    = Expression.Call(textProp,  containsMeth, literal);
-      var termClause = Expression.OrElse(titleHit, textHit);
-      body = body is null ? termClause : Expression.OrElse(body, termClause);
-    }
-
-    return Expression.Lambda<Func<Document, bool>>(body!, param);
-  }
-
+  /// <summary>Returns document counts grouped by processing status.</summary>
   public async Task<Dictionary<string, long>> GetCountsByStatusAsync(CancellationToken cancellationToken = default)
   {
     var rows = await _db.Documents
@@ -198,14 +115,5 @@ public class EfDocumentRepository : IDocumentRepository
       .ToListAsync(cancellationToken);
 
     return rows.ToDictionary(x => x.Status.ToString(), x => x.Count);
-  }
-
-  // Lightweight keyword relevance: title hits worth 1.0 each, body hits worth 0.3 each, normalised to [0, 1].
-  private static double ComputeScore(Document doc, string[] terms)
-  {
-    var titleHits = terms.Count(t => doc.Title.Contains(t, StringComparison.OrdinalIgnoreCase));
-    var textHits  = terms.Count(t => doc.Text.Contains(t, StringComparison.OrdinalIgnoreCase));
-    var maxPossible = terms.Length * 1.3;
-    return Math.Round((titleHits * 1.0 + textHits * 0.3) / maxPossible, 4);
   }
 }

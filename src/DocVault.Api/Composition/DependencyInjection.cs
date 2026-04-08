@@ -58,6 +58,18 @@ public static class DependencyInjection
             QueueLimit           = 0,
           }));
 
+      // Stricter limit on auth endpoints to mitigate brute-force attacks.
+      options.AddPolicy(RateLimitPolicies.AuthEndpoints, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+          partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+          factory: _ => new FixedWindowRateLimiterOptions
+          {
+            PermitLimit          = 10,
+            Window               = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit           = 0,
+          }));
+
       options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     });
 

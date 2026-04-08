@@ -62,7 +62,10 @@ public static class DocumentsEndpoints
       ICurrentUser currentUser,
       CancellationToken ct) =>
     {
-      var file = request.File!;
+      var file = request.File;
+      if (file is null)
+        return Results.Problem(detail: "No file was uploaded.", statusCode: StatusCodes.Status400BadRequest);
+
       await using var stream = file.OpenReadStream();
 
       var result = await handler.HandleAsync(new ImportDocumentCommand(

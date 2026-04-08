@@ -64,7 +64,7 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
 
       // Restore the lightweight in-process queue; channel-backed, no Postgres needed.
-      services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
+      services.AddSingleton<IWorkQueue<IndexingWorkItem>>(_ => new ChannelWorkQueue<IndexingWorkItem>());
 
       // Replace the JWT auth setup with a no-op test handler so that
       // RequireAuthorization() endpoints work without a real token.

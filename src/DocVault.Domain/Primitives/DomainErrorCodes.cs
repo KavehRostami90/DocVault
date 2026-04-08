@@ -23,6 +23,9 @@ public static class DomainErrorCodes
     // Document – Hash
     public const string DuplicateHash = "DUPLICATE_HASH";
 
+    // Document – State
+    public const string InvalidStateTransition = "INVALID_STATE_TRANSITION";
+
     // Import
     public const string ImportAlreadyCompleted = "IMPORT_ALREADY_COMPLETED";
     public const string StoragePathRequired = "STORAGE_PATH_REQUIRED";

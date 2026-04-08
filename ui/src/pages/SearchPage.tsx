@@ -57,21 +57,41 @@ export default function SearchPage() {
         </button>
       </div>
 
-      {error && (
+      {loading && (
+        <div className="space-y-3 animate-pulse">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+              <div className="flex items-start gap-4">
+                <div className="w-9 h-9 bg-slate-800 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="flex justify-between gap-4">
+                    <div className="h-3.5 bg-slate-800 rounded w-2/5" />
+                    <div className="h-3.5 bg-slate-800 rounded w-16" />
+                  </div>
+                  <div className="h-3 bg-slate-800 rounded w-full" />
+                  <div className="h-3 bg-slate-800 rounded w-3/4" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && error && (
         <div className="flex items-center gap-3 bg-red-900/20 border border-red-900/30 rounded-xl p-4 mb-6">
           <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
           <p className="text-red-400 text-sm">{error}</p>
         </div>
       )}
 
-      {searched && !error && results.length === 0 && (
+      {!loading && searched && !error && results.length === 0 && (
         <div className="text-center py-16">
           <p className="text-slate-400">No results for <span className="text-white">"{query}"</span></p>
           <p className="text-slate-600 text-sm mt-1">Try different keywords or check if documents are indexed</p>
         </div>
       )}
 
-      {results.length > 0 && (
+      {!loading && results.length > 0 && (
         <div className="space-y-3">
           <p className="text-slate-500 text-sm">{results.length} result{results.length !== 1 ? 's' : ''}</p>
           {results.map(r => (
@@ -93,7 +113,7 @@ export default function SearchPage() {
         </div>
       )}
 
-      {!searched && (
+      {!loading && !searched && (
         <div className="text-center py-16 text-slate-600">
           <p className="text-sm">Press Enter or click Search to find documents</p>
         </div>

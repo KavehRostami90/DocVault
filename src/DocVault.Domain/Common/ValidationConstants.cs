@@ -52,6 +52,7 @@ public static class ValidationConstants
     {
         public const int DEFAULT_PAGE = 1;
         public const int DEFAULT_SIZE = 20;
+        public const int MAX_PAGE_SIZE = 100;
         public const int MAX_FILTER_LENGTH = 100;
 
         /// <summary>

@@ -5,9 +5,8 @@ namespace DocVault.Application.UseCases.Admin;
 /// (user counts and document counts by status).
 /// </summary>
 /// <remarks>
-/// User counts are not resolved by this query — they must be supplied as
-/// explicit parameters to <see cref="GetAdminStatsHandler.HandleAsync"/> because
-/// <c>UserManager</c> lives in the Infrastructure layer and cannot be injected
-/// into Application handlers.
+/// User counts are fetched inside <see cref="GetAdminStatsHandler"/> via
+/// <see cref="DocVault.Application.Abstractions.Users.IUserQueryService"/> —
+/// no data needs to be supplied by the caller.
 /// </remarks>
 public sealed record GetAdminStatsQuery;

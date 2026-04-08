@@ -4,7 +4,9 @@ using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
+using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Background.Queue;
+using DocVault.Domain.Events;
 using DocVault.Infrastructure.Auth;
 using DocVault.Infrastructure.Embeddings;
 using DocVault.Infrastructure.Messaging;
@@ -28,7 +30,11 @@ public static class DependencyInjection
 
     if (string.IsNullOrWhiteSpace(connectionString))
     {
-      services.AddDbContext<DocVaultDbContext>(options => options.UseInMemoryDatabase("docvault"));
+      services.AddDbContextFactory<DocVaultDbContext>(options =>
+        options.UseInMemoryDatabase("docvault"));
+      services.AddScoped(sp =>
+        sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
+      services.AddSingleton<IWorkQueue<IndexingWorkItem>>(_ => new ChannelWorkQueue<IndexingWorkItem>(5_000));
     }
     else
     {
@@ -57,6 +63,8 @@ public static class DependencyInjection
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();
     services.AddScoped<ITagRepository, EfTagRepository>();
     services.AddScoped<IImportJobRepository, EfImportJobRepository>();
+    services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+    services.AddScoped<IUserQueryService, EfUserQueryService>();
 
     var azureBlobConnStr = configuration.GetConnectionString("AzureBlob");
     var azureBlobContainer = configuration["Storage:ContainerName"] ?? "docvault";
@@ -85,8 +93,8 @@ public static class DependencyInjection
     }
 
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
-    services.AddSingleton<DocumentImportedHandler>();
-    services.AddSingleton<SearchExecutedHandler>();
+    services.AddSingleton<IEventHandler<DocumentImported>, DocumentImportedHandler>();
+    services.AddSingleton<IEventHandler<SearchExecuted>, SearchExecutedHandler>();
 
     services.AddHostedService<DatabaseInitializer>();
 
