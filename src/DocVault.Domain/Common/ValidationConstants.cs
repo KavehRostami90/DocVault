@@ -15,7 +15,10 @@ public static class ValidationConstants
         public static readonly string[] ALLOWED_CONTENT_TYPES =
         [
             "application/pdf",
-            "text/plain", 
+            "text/plain",
+            "text/markdown",
+            "text/x-markdown",
+            "application/json",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ];
     }
