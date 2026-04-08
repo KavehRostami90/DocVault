@@ -45,3 +45,6 @@ __queuestorage__/
 ui/node_modules/
 ui/dist/
 ui/*.tsbuildinfo
+
+# Directory placeholders — never commit
+.gitkeep
