@@ -51,8 +51,9 @@ public sealed class DocumentTestBuilder
         var id = DocumentId.New();
         var hash = new FileHash(Guid.NewGuid().ToString("N"));
         var document = new Document(id, _title, _fileName, _contentType, _content.Length, hash, _ownerId);
+        document.MarkImported();   // Pending → Imported (required before Indexed)
         document.AttachText(_content);
-        document.MarkIndexed();
+        document.MarkIndexed();    // Imported → Indexed
         return document;
     }
 

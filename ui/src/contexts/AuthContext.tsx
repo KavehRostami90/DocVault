@@ -28,18 +28,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })
 
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Prevents state updates and timer scheduling after the component unmounts.
+  const isMounted = useRef(true)
 
   const scheduleRefresh = useCallback((expiresInSeconds: number) => {
+    if (!isMounted.current) return
     if (refreshTimer.current) clearTimeout(refreshTimer.current)
     // Refresh 60 seconds before expiry
     const delay = Math.max((expiresInSeconds - 60) * 1000, 5000)
     refreshTimer.current = setTimeout(async () => {
       try {
         const res = await authApi.refresh()
+        if (!isMounted.current) return
         sessionStorage.setItem(SESSION_KEY, res.accessToken)
         setState(prev => ({ ...prev, accessToken: res.accessToken }))
         scheduleRefresh(res.expiresIn)
       } catch {
+        if (!isMounted.current) return
         // Refresh failed — clear session
         sessionStorage.removeItem(SESSION_KEY)
         sessionStorage.removeItem(SESSION_USER_KEY)
@@ -79,7 +84,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .catch(() => setState({ user: null, accessToken: null, isLoading: false }))
     }
 
-    return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current) }
+    return () => {
+      isMounted.current = false
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    }
   }, [scheduleRefresh])
 
   const setAuth = useCallback((user: UserInfo, accessToken: string, expiresIn: number) => {

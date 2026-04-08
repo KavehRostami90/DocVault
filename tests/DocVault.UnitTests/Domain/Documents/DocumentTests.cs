@@ -85,6 +85,14 @@ public sealed class DocumentTests
     }
 
     [Fact]
+    public void MarkImported_WhenNotPending_ThrowsDomainException()
+    {
+        var doc = MakeDocument();
+        doc.MarkImported(); // Pending → Imported
+        Assert.Throws<DomainException>(() => doc.MarkImported()); // Imported → error
+    }
+
+    [Fact]
     public void MarkImported_RaisesDocumentImportedEvent()
     {
         var doc = MakeDocument();
@@ -95,6 +103,15 @@ public sealed class DocumentTests
         Assert.Equal(doc.Id, imported.DocumentId);
     }
 
+    [Fact]
+    public void MarkImported_SetsUpdatedAt()
+    {
+        var doc = MakeDocument();
+        Assert.Null(doc.UpdatedAt);
+        doc.MarkImported();
+        Assert.NotNull(doc.UpdatedAt);
+    }
+
     // -------------------------------------------------------------------------
     // MarkIndexed
     // -------------------------------------------------------------------------
@@ -103,6 +120,7 @@ public sealed class DocumentTests
     public void MarkIndexed_SetsStatusToIndexed()
     {
         var doc = MakeDocument();
+        doc.MarkImported();
         doc.AttachText("text");
         doc.MarkIndexed();
         Assert.Equal(DocumentStatus.Indexed, doc.Status);
@@ -112,6 +130,8 @@ public sealed class DocumentTests
     public void MarkIndexed_RaisesDocumentIndexedEvent()
     {
         var doc = MakeDocument();
+        doc.MarkImported();
+        doc.ClearDomainEvents(); // ignore the Imported event
         doc.AttachText("text");
         doc.MarkIndexed();
 
@@ -129,6 +149,13 @@ public sealed class DocumentTests
         Assert.Equal(2, doc.DomainEvents.Count);
     }
 
+    [Fact]
+    public void MarkIndexed_WhenNotImported_ThrowsDomainException()
+    {
+        var doc = MakeDocument(); // Pending state
+        Assert.Throws<DomainException>(() => doc.MarkIndexed());
+    }
+
     // -------------------------------------------------------------------------
     // MarkFailed
     // -------------------------------------------------------------------------
@@ -139,6 +166,23 @@ public sealed class DocumentTests
         var doc = MakeDocument();
         doc.MarkFailed();
         Assert.Equal(DocumentStatus.Failed, doc.Status);
+    }
+
+    [Fact]
+    public void MarkFailed_WhenAlreadyIndexed_ThrowsDomainException()
+    {
+        var doc = MakeDocument();
+        doc.MarkImported();
+        doc.MarkIndexed();
+        Assert.Throws<DomainException>(() => doc.MarkFailed("too late"));
+    }
+
+    [Fact]
+    public void MarkFailed_WhenAlreadyFailed_ThrowsDomainException()
+    {
+        var doc = MakeDocument();
+        doc.MarkFailed("first failure");
+        Assert.Throws<DomainException>(() => doc.MarkFailed("second failure"));
     }
 
     [Fact]
@@ -159,11 +203,24 @@ public sealed class DocumentTests
     }
 
     [Fact]
-    public void MarkFailed_DoesNotRaiseAnyDomainEvent()
+    public void MarkFailed_RaisesDocumentFailedEvent()
     {
         var doc = MakeDocument();
         doc.MarkFailed("error");
-        Assert.Empty(doc.DomainEvents);
+
+        var evt = Assert.Single(doc.DomainEvents);
+        var failed = Assert.IsType<DocumentFailed>(evt);
+        Assert.Equal(doc.Id, failed.DocumentId);
+        Assert.Equal("error", failed.Error);
+    }
+
+    [Fact]
+    public void MarkFailed_SetsUpdatedAt()
+    {
+        var doc = MakeDocument();
+        Assert.Null(doc.UpdatedAt);
+        doc.MarkFailed();
+        Assert.NotNull(doc.UpdatedAt);
     }
 
     // -------------------------------------------------------------------------

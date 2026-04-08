@@ -6,14 +6,28 @@ namespace DocVault.Application.Background.Queue;
 /// Lock-free, async-capable work queue backed by
 /// <see cref="System.Threading.Channels.Channel{T}"/>.
 /// <para>
-/// The unbounded channel means producers never block; backpressure is applied
-/// at the application level (e.g., HTTP request limits).
+/// Pass a positive <paramref name="boundedCapacity"/> to apply back-pressure;
+/// callers will wait when the channel is full rather than growing unboundedly.
+/// A value of zero (default) creates an unbounded channel.
 /// </para>
 /// </summary>
 public sealed class ChannelWorkQueue<T> : IWorkQueue<T>
 {
-  private readonly Channel<T> _channel = Channel.CreateUnbounded<T>(
-    new UnboundedChannelOptions { SingleReader = true, AllowSynchronousContinuations = false });
+  private readonly Channel<T> _channel;
+
+  /// <summary>Creates the work queue with optional bounded capacity.</summary>
+  /// <param name="boundedCapacity">
+  /// Maximum items the channel will hold before blocking producers.
+  /// Zero (default) means unbounded.
+  /// </param>
+  public ChannelWorkQueue(int boundedCapacity = 0)
+  {
+    _channel = boundedCapacity > 0
+      ? Channel.CreateBounded<T>(new BoundedChannelOptions(boundedCapacity)
+          { SingleReader = true, FullMode = BoundedChannelFullMode.Wait })
+      : Channel.CreateUnbounded<T>(
+          new UnboundedChannelOptions { SingleReader = true, AllowSynchronousContinuations = false });
+  }
 
   /// <inheritdoc />
   public void Enqueue(T workItem) => _channel.Writer.TryWrite(workItem);

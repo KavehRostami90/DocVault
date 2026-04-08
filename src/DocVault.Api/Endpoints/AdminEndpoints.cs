@@ -3,7 +3,7 @@ using DocVault.Api.Contracts.Admin;
 using DocVault.Api.Contracts.Common;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Mappers;
-using DocVault.Application.Common.Paging;
+using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.UseCases.Admin;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.ListDocuments;
@@ -19,6 +19,8 @@ namespace DocVault.Api.Endpoints;
 /// </summary>
 public static class AdminEndpoints
 {
+  private const string AuditLoggerName = "DocVault.Admin.Audit";
+
   /// <summary>
   /// Maps admin routes onto <paramref name="routes"/> under the <c>/admin</c> prefix.
   /// </summary>
@@ -46,11 +48,18 @@ public static class AdminEndpoints
 
     group.MapDelete("/documents/{id:guid}", async (
       Guid id,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
       DeleteDocumentHandler handler,
       CancellationToken ct) =>
     {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
       var result = await handler.HandleAsync(
         new DeleteDocumentCommand(new DocumentId(id), CallerId: null, IsAdmin: true), ct);
+
+      if (result.IsSuccess)
+        logger.LogWarning("Admin {CallerId} deleted document {DocumentId}", caller.UserId, id);
+
       return result.IsSuccess ? Results.NoContent() : Results.NotFound();
     })
     .Produces(StatusCodes.Status204NoContent)
@@ -59,10 +68,17 @@ public static class AdminEndpoints
 
     group.MapPost("/documents/{id:guid}/reindex", async (
       Guid id,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
       ReindexDocumentHandler handler,
       CancellationToken ct) =>
     {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
       var result = await handler.HandleAsync(new ReindexDocumentCommand(new DocumentId(id)), ct);
+
+      if (result.IsSuccess)
+        logger.LogInformation("Admin {CallerId} re-indexed document {DocumentId}", caller.UserId, id);
+
       return result.IsSuccess ? Results.NoContent() : Results.NotFound();
     })
     .Produces(StatusCodes.Status204NoContent)
@@ -72,41 +88,37 @@ public static class AdminEndpoints
     // ── Users ─────────────────────────────────────────────────────────────────
 
     group.MapGet("/users", async (
-      UserManager<ApplicationUser> users,
+      ListUsersHandler handler,
       CancellationToken ct) =>
     {
-      var allUsers = users.Users
-        .OrderByDescending(u => u.CreatedAt)
-        .ToList();
-
-      var result = new List<object>();
-      foreach (var u in allUsers)
+      var result = await handler.HandleAsync(new ListUsersQuery(), ct);
+      return Results.Ok(result.Value!.Select(u => new
       {
-        var roles = await users.GetRolesAsync(u);
-        result.Add(new
-        {
-          id = u.Id,
-          email = u.Email,
-          displayName = u.DisplayName,
-          isGuest = u.IsGuest,
-          createdAt = u.CreatedAt,
-          roles,
-        });
-      }
-
-      return Results.Ok(result);
+        id          = u.Id,
+        email       = u.Email,
+        displayName = u.DisplayName,
+        isGuest     = u.IsGuest,
+        createdAt   = u.CreatedAt,
+        roles       = u.Roles,
+      }));
     })
     .WithSummary("Admin: list all registered users");
 
     group.MapDelete("/users/{id}", async (
       string id,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
       UserManager<ApplicationUser> users,
       CancellationToken ct) =>
     {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
       var user = await users.FindByIdAsync(id);
       if (user is null) return Results.NotFound();
 
       var result = await users.DeleteAsync(user);
+      if (result.Succeeded)
+        logger.LogWarning("Admin {CallerId} deleted user {UserId} ({Email})", caller.UserId, id, user.Email);
+
       return result.Succeeded ? Results.NoContent() : Results.Problem(
         detail: string.Join("; ", result.Errors.Select(e => e.Description)),
         statusCode: StatusCodes.Status422UnprocessableEntity);
@@ -118,15 +130,22 @@ public static class AdminEndpoints
     group.MapPut("/users/{id}/roles", async (
       string id,
       UpdateUserRolesRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
       UserManager<ApplicationUser> users,
       CancellationToken ct) =>
     {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
       var user = await users.FindByIdAsync(id);
       if (user is null) return Results.NotFound();
 
       var current = await users.GetRolesAsync(user);
       await users.RemoveFromRolesAsync(user, current);
       var addResult = await users.AddToRolesAsync(user, request.Roles);
+
+      if (addResult.Succeeded)
+        logger.LogInformation("Admin {CallerId} set roles [{Roles}] on user {UserId}",
+          caller.UserId, string.Join(", ", request.Roles), id);
 
       return addResult.Succeeded ? Results.NoContent() : Results.Problem(
         detail: string.Join("; ", addResult.Errors.Select(e => e.Description)),
@@ -140,27 +159,10 @@ public static class AdminEndpoints
 
     group.MapGet("/stats", async (
       GetAdminStatsHandler handler,
-      UserManager<ApplicationUser> users,
       CancellationToken ct) =>
     {
-      var allUsers = users.Users.ToList();
-      int guestCount = 0, adminCount = 0;
-      foreach (var u in allUsers)
-      {
-        var roles = await users.GetRolesAsync(u);
-        if (u.IsGuest) guestCount++;
-        if (roles.Contains(AppRoles.Admin)) adminCount++;
-      }
-
-      var result = await handler.HandleAsync(
-        new GetAdminStatsQuery(),
-        totalUsers: allUsers.Count,
-        guestUsers: guestCount,
-        registeredUsers: allUsers.Count - guestCount,
-        adminUsers: adminCount,
-        ct);
-
-      var dto = result.Value!;
+      var result = await handler.HandleAsync(new GetAdminStatsQuery(), ct);
+      var dto    = result.Value!;
       return Results.Ok(new AdminStatsResponse(
         dto.TotalUsers,
         dto.GuestUsers,

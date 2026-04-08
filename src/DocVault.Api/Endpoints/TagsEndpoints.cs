@@ -11,7 +11,8 @@ public static class TagsEndpoints
 {
   public static IEndpointRouteBuilder MapTagsEndpoints(this IEndpointRouteBuilder routes)
   {
-    var group = routes.MapGroup("/tags");
+    var group = routes.MapGroup("/tags")
+      .RequireAuthorization();
     group.MapGet("/", async (ListTagsHandler handler, CancellationToken ct) =>
       {
         var names = await handler.HandleAsync(ct);

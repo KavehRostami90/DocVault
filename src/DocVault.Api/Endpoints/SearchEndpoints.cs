@@ -24,7 +24,9 @@ public static class SearchEndpoints
           OwnerId: currentUser.UserId, IsAdmin: currentUser.IsAdmin), ct);
 
       if (!result.IsSuccess || result.Value is null)
-        return Results.Ok(new PageResponse<SearchResultItemResponse>([], request.Page, request.Size, 0));
+        return Results.Problem(
+          detail: result.Error ?? "Search service temporarily unavailable.",
+          statusCode: StatusCodes.Status500InternalServerError);
 
       var page  = result.Value;
       var items = page.Items.Select(ToResponse).ToList();

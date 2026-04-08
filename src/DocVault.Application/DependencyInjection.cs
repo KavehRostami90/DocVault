@@ -36,6 +36,7 @@ public static class DependencyInjection
     services.AddScoped<ListTagsHandler>();
     services.AddScoped<GetAdminStatsHandler>();
     services.AddScoped<ReindexDocumentHandler>();
+    services.AddScoped<ListUsersHandler>();
 
     services.AddSingleton<FileReadStage>();
     services.AddSingleton<TextExtractStage>();

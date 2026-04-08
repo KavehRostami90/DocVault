@@ -1,6 +1,7 @@
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Background.Queue;
 using DocVault.Application.Pipeline;
+using DocVault.Domain.Imports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -93,6 +94,7 @@ public sealed partial class IndexingWorker : BackgroundService
   {
     using var scope = _scopeFactory.CreateScope();
     var importJobRepository = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
+    var documentRepository  = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
 
     var job = await importJobRepository.GetAsync(item.JobId, ct);
     if (job is null)
@@ -104,12 +106,10 @@ public sealed partial class IndexingWorker : BackgroundService
     job.MarkInProgress();
     await importJobRepository.UpdateAsync(job, ct);
 
-    var documentRepository = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
-
     try
     {
       LogProcessing(_logger, item.JobId, item.StoragePath);
-      var extractedText = await _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
+      var extractedText = await RunPipelineAsync(item, ct);
 
       job.MarkCompleted();
       await importJobRepository.UpdateAsync(job, ct);
@@ -127,22 +127,41 @@ public sealed partial class IndexingWorker : BackgroundService
     catch (Exception ex) when (!ct.IsCancellationRequested)
     {
       LogFailed(_logger, item.JobId, ex);
-      try
-      {
-        job.MarkFailed(ex.Message);
-        await importJobRepository.UpdateAsync(job, ct);
+      await MarkFailedAsync(job, item.JobId, ex.Message, importJobRepository, documentRepository, ct);
+    }
+  }
 
-        var document = await documentRepository.GetAsync(job.DocumentId, ct);
-        if (document is not null)
-        {
-          document.MarkFailed(ex.Message);
-          await documentRepository.UpdateAsync(document, ct);
-        }
-      }
-      catch (Exception updateEx)
+  /// <summary>Runs the ingestion pipeline stages for the given work item.</summary>
+  private Task<string> RunPipelineAsync(IndexingWorkItem item, CancellationToken ct)
+    => _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
+
+  /// <summary>
+  /// Updates the job and document to <c>Failed</c> status after a processing error.
+  /// Isolated so that state-transition errors don't mask the original exception.
+  /// </summary>
+  private async Task MarkFailedAsync(
+    ImportJob job,
+    Guid jobId,
+    string errorMessage,
+    IImportJobRepository importJobRepository,
+    IDocumentRepository documentRepository,
+    CancellationToken ct)
+  {
+    try
+    {
+      job.MarkFailed(errorMessage);
+      await importJobRepository.UpdateAsync(job, ct);
+
+      var document = await documentRepository.GetAsync(job.DocumentId, ct);
+      if (document is not null)
       {
-        LogStatusUpdateFailed(_logger, item.JobId, updateEx);
+        document.MarkFailed(errorMessage);
+        await documentRepository.UpdateAsync(document, ct);
       }
+    }
+    catch (Exception updateEx)
+    {
+      LogStatusUpdateFailed(_logger, jobId, updateEx);
     }
   }
 

@@ -14,6 +14,7 @@ public class DocumentResponseMapperTests
   {
     var id = DocumentId.New();
     var doc = new Document(id, "Title", "file.pdf", "application/pdf", 123, new FileHash("hash"));
+    doc.MarkImported();
     doc.AttachText("content");
     doc.MarkIndexed();
 

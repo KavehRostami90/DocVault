@@ -1,4 +1,5 @@
 using DocVault.Application.Abstractions.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace DocVault.Infrastructure.Messaging;
 
@@ -7,6 +8,12 @@ namespace DocVault.Infrastructure.Messaging;
 /// <see cref="IEventHandler{TEvent}"/> implementations from the DI container
 /// and invokes them sequentially within the same process.
 /// </summary>
+/// <remarks>
+/// Uses <c>MakeGenericType</c> to recover the concrete event type at runtime,
+/// ensuring compile-time correctness at the DI boundary while supporting
+/// polymorphic dispatch without a <c>dynamic</c> cast.
+/// Handlers must be registered as <c>IEventHandler&lt;TEvent&gt;</c> in DI.
+/// </remarks>
 public sealed class InProcessDomainEventDispatcher : IDomainEventDispatcher
 {
   private readonly IServiceProvider _provider;
@@ -21,30 +28,28 @@ public sealed class InProcessDomainEventDispatcher : IDomainEventDispatcher
   }
 
   /// <summary>
-  /// Dispatches each domain event in <paramref name="domainEvents"/> to all registered
-  /// handlers for that event type. Handlers are resolved via <see cref="IServiceProvider"/>.
+  /// Dispatches each domain event to all registered handlers of its concrete type.
   /// </summary>
   /// <param name="domainEvents">The domain events to dispatch.</param>
   /// <param name="cancellationToken">Cancellation token forwarded to each handler.</param>
   public async Task DispatchAsync(IEnumerable<object> domainEvents, CancellationToken cancellationToken = default)
   {
     foreach (var domainEvent in domainEvents)
-    {
-      var handlerType = typeof(IEventHandler<>).MakeGenericType(domainEvent.GetType());
-      var enumerableType = typeof(IEnumerable<>).MakeGenericType(handlerType);
-      if (_provider.GetService(enumerableType) is not IEnumerable<object> handlers)
-      {
-        continue;
-      }
+      await DispatchSingleAsync(domainEvent, cancellationToken);
+  }
 
-      foreach (var handler in handlers)
-      {
-        var method = handlerType.GetMethod("HandleAsync");
-        if (method?.Invoke(handler, new[] { domainEvent, cancellationToken }) is Task task)
-        {
-          await task.ConfigureAwait(false);
-        }
-      }
+  private async Task DispatchSingleAsync(object domainEvent, CancellationToken cancellationToken)
+  {
+    var eventType   = domainEvent.GetType();
+    var handlerType = typeof(IEventHandler<>).MakeGenericType(eventType);
+    var handleMethod = handlerType.GetMethod(nameof(IEventHandler<object>.HandleAsync))
+      ?? throw new InvalidOperationException($"HandleAsync not found on {handlerType}.");
+
+    var handlers = _provider.GetServices(handlerType);
+    foreach (var handler in handlers)
+    {
+      var task = (Task)handleMethod.Invoke(handler, [domainEvent, cancellationToken])!;
+      await task;
     }
   }
 }

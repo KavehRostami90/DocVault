@@ -1,4 +1,5 @@
 using DocVault.Api.Contracts.Auth;
+using DocVault.Api.Middleware;
 using DocVault.Api.Validation;
 using DocVault.Application.Abstractions.Auth;
 using DocVault.Infrastructure.Auth;
@@ -41,13 +42,14 @@ public static class AuthEndpoints
 
       var pair = await tokens.CreateTokenPairAsync(
         user.Id, user.Email!, user.DisplayName,
-        [AppRoles.User], false, ct);
+        [AppRoles.User], isGuest: false, ct);
 
       SetRefreshCookie(http, pair);
       return Results.Ok(BuildResponse(user, pair, AppRoles.User));
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<RegisterRequest>())
     .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
     .Produces<AuthResponse>()
     .Produces(StatusCodes.Status409Conflict)
     .WithSummary("Register a new user account");
@@ -76,6 +78,7 @@ public static class AuthEndpoints
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<LoginRequest>())
     .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
     .Produces<AuthResponse>()
     .Produces(StatusCodes.Status401Unauthorized)
     .WithSummary("Login with email and password");
@@ -103,7 +106,7 @@ public static class AuthEndpoints
       await users.AddToRoleAsync(user, AppRoles.Guest);
 
       var pair = await tokens.CreateTokenPairAsync(
-        user.Id, user.Email!, "Guest", [AppRoles.Guest], true, ct);
+        user.Id, user.Email!, "Guest", [AppRoles.Guest], isGuest: true, ct);
 
       SetRefreshCookie(http, pair);
       return Results.Ok(BuildResponse(user, pair, AppRoles.Guest));
@@ -147,15 +150,13 @@ public static class AuthEndpoints
     .WithSummary("Logout and revoke the refresh token");
 
     group.MapGet("/me", async (
-      HttpContext http,
+      ICurrentUser currentUser,
       UserManager<ApplicationUser> users) =>
     {
-      var userId = http.User.FindFirst("sub")?.Value
-                ?? http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+      if (!currentUser.IsAuthenticated || currentUser.UserId is null)
+        return Results.Unauthorized();
 
-      if (userId is null) return Results.Unauthorized();
-
-      var user = await users.FindByIdAsync(userId);
+      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
       if (user is null) return Results.Unauthorized();
 
       var roles = await users.GetRolesAsync(user);
