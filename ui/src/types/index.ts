@@ -5,6 +5,9 @@ export interface DocumentListItem {
   title: string
   fileName: string
   status: DocumentStatus
+  size: number
+  createdAt: string
+  ownerId: string | null
 }
 
 export interface DocumentDetail {

@@ -3,6 +3,7 @@ using DocVault.Application.Background.Queue;
 using DocVault.Application.Pipeline;
 using DocVault.Application.Pipeline.Hooks;
 using DocVault.Application.Pipeline.Stages;
+using DocVault.Application.UseCases.Admin;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
 using DocVault.Application.UseCases.Documents.ImportDocument;
@@ -33,6 +34,8 @@ public static class DependencyInjection
     services.AddScoped<StartImportJobHandler>();
     services.AddScoped<GetImportStatusHandler>();
     services.AddScoped<ListTagsHandler>();
+    services.AddScoped<GetAdminStatsHandler>();
+    services.AddScoped<ReindexDocumentHandler>();
 
     services.AddSingleton<FileReadStage>();
     services.AddSingleton<TextExtractStage>();
