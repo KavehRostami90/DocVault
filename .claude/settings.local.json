@@ -4,7 +4,8 @@
       "Bash(npm run:*)",
       "Bash(dotnet build:*)",
       "Bash(dotnet ef:*)",
-      "Bash(dotnet test:*)"
+      "Bash(dotnet test:*)",
+      "Bash(git rm:*)"
     ]
   }
 }

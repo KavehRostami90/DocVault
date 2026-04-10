@@ -1,6 +1,10 @@
 name: Deploy to Test
 
 on:
+  workflow_run:
+    workflows: ["CI — Build & Test"]
+    branches: [master]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -11,6 +15,10 @@ jobs:
   deploy:
     name: Deploy to Test Environment
     runs-on: ubuntu-latest
+    environment: test
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     permissions:
       id-token: write
@@ -18,6 +26,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: >-
+            ${{
+              github.event_name == 'workflow_dispatch'
+              && github.sha
+              || github.event.workflow_run.head_sha
+            }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
