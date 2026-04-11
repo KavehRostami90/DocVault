@@ -19,6 +19,8 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
   const [totalCount, setTotalCount] = useState(0)
   const [pendingDelete, setPendingDelete] = useState<AdminDocument | null>(null)
   const [toastMsg, setToastMsg] = useState('')
+  const [previewingId, setPreviewingId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const PAGE_SIZE = 20
 
@@ -77,35 +79,42 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
   }
 
   async function handlePreview(doc: AdminDocument) {
+    if (previewingId === doc.id) return
+    setPreviewingId(doc.id)
     try {
       const blob = await adminApi.getDocumentPreviewBlob(doc.id)
       const objectUrl = window.URL.createObjectURL(blob)
-      const previewWindow = window.open(objectUrl, '_blank', 'noopener,noreferrer')
-
-      if (!previewWindow)
-        window.location.assign(objectUrl)
-
+      const win = window.open(objectUrl, '_blank')
+      if (!win) {
+        window.URL.revokeObjectURL(objectUrl)
+        toast('Preview blocked — allow popups for this site and try again.')
+        return
+      }
       window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000)
     } catch {
       toast(`Preview failed for "${doc.title}".`)
+    } finally {
+      setPreviewingId(null)
     }
   }
 
   async function handleDownload(doc: AdminDocument) {
+    if (downloadingId === doc.id) return
+    setDownloadingId(doc.id)
     try {
       const blob = await adminApi.getDocumentDownloadBlob(doc.id)
       const objectUrl = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
-
       link.href = objectUrl
       link.download = doc.fileName
       document.body.appendChild(link)
       link.click()
       link.remove()
-
       window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5_000)
     } catch {
       toast(`Download failed for "${doc.title}".`)
+    } finally {
+      setDownloadingId(null)
     }
   }
 
@@ -176,14 +185,16 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handlePreview(d)}
-                      className="p-1.5 rounded text-slate-500 hover:text-sky-400 hover:bg-sky-500/10 transition-colors"
+                      disabled={previewingId === d.id}
+                      className="p-1.5 rounded text-slate-500 hover:text-sky-400 hover:bg-sky-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       title="Preview document"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDownload(d)}
-                      className="p-1.5 rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      disabled={downloadingId === d.id}
+                      className="p-1.5 rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       title="Download document"
                     >
                       <Download className="w-4 h-4" />

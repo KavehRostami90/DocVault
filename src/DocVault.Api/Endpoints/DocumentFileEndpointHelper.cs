@@ -27,11 +27,16 @@ internal static class DocumentFileEndpointHelper
     try
     {
       var file = outcome.Value!;
+
+      // Read stream first — only set response headers once we know the file exists.
+      // Setting headers before the read would leave a Content-Disposition header on
+      // the 404 response when the file is missing, confusing nginx and some browsers.
+      var stream = await storage.ReadAsync(file.StoragePath, ct);
+
       httpContext.Response.Headers.Append(
         HeaderNames.ContentDisposition,
         CreateContentDisposition(dispositionType, file.FileName));
 
-      var stream = await storage.ReadAsync(file.StoragePath, ct);
       return Results.Stream(stream, file.ContentType, enableRangeProcessing: true);
     }
     catch (FileNotFoundException)

@@ -42,6 +42,8 @@ public sealed class LocalFileStorage : IFileStorage
   public Task<Stream> ReadAsync(string path, CancellationToken cancellationToken = default)
   {
     var fullPath = Path.Combine(_root, path);
+    if (!File.Exists(fullPath))
+      throw new FileNotFoundException($"Storage file not found: '{path}'.", fullPath);
     Stream stream = File.OpenRead(fullPath);
     return Task.FromResult(stream);
   }

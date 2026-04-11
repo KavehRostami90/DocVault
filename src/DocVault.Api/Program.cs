@@ -2,6 +2,7 @@ using Asp.Versioning;
 using DocVault.Api.Composition;
 using DocVault.Api.Endpoints;
 using DocVault.Api.Middleware;
+using Microsoft.AspNetCore.Http.Features;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
@@ -17,13 +18,16 @@ try
   Log.Information("Starting DocVault API host");
 
   var builder = WebApplication.CreateBuilder(args);
+  var uploadOptions = builder.Configuration.GetSection(UploadOptions.Section).Get<UploadOptions>() ?? new UploadOptions();
 
   builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services));
 
-  builder.Services.AddDocVault(builder.Configuration);
   builder.Services.AddApiOptions(builder.Configuration);
+  builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = uploadOptions.MaxFileSizeBytes);
+  builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = uploadOptions.MaxFileSizeBytes);
+  builder.Services.AddDocVault(builder.Configuration);
 
   var app = builder.Build();
 
@@ -76,6 +80,7 @@ try
   var v1 = app.MapGroup("/api/v{version:apiVersion}")
     .WithApiVersionSet(apiVersionSet);
 
+  v1.MapConfigurationEndpoints();
   v1.MapAuthEndpoints();
   v1.MapDocumentsEndpoints();
   v1.MapSearchEndpoints();

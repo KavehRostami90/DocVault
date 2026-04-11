@@ -60,10 +60,14 @@ export default function DocumentDetailPage() {
     try {
       const blob = await getDocumentPreviewBlob(id)
       const objectUrl = window.URL.createObjectURL(blob)
-      const previewWindow = window.open(objectUrl, '_blank', 'noopener,noreferrer')
 
-      if (!previewWindow)
-        window.location.assign(objectUrl)
+      const win = window.open(objectUrl, '_blank')
+      if (!win) {
+        // Popup blocker prevented the tab from opening — clean up and inform the user.
+        window.URL.revokeObjectURL(objectUrl)
+        setFileActionError('Preview was blocked — allow popups for this site and try again.')
+        return
+      }
 
       window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000)
     } catch (e) {

@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, Upload, Plus, Tag } from 'lucide-react'
 import { uploadDocument } from '../api/documents'
+import { getUploadSettings } from '../api/settings'
 
 const ACCEPTED_MIME_TYPES = [
   'application/pdf',
@@ -26,6 +27,12 @@ function getFileTypeLabel(mimeType: string): string {
   return FILE_TYPE_LABELS[mimeType] ?? mimeType
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 interface Props {
   onClose: () => void
   onUploaded: (id: string) => void
@@ -38,12 +45,47 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   const [tagInput, setTagInput] = useState('')
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [settingsLoading, setSettingsLoading] = useState(true)
+  const [maxFileSizeBytes, setMaxFileSizeBytes] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    let cancelled = false
+
+    getUploadSettings()
+      .then(settings => {
+        if (cancelled) return
+        setMaxFileSizeBytes(settings.maxFileSizeBytes)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setError('Failed to load upload settings. Please try again.')
+      })
+      .finally(() => {
+        if (cancelled) return
+        setSettingsLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [])
+
   const handleFile = (f: File) => {
+    if (maxFileSizeBytes === null) {
+      setFile(null)
+      setError('Upload settings are still loading. Please wait a moment and try again.')
+      return
+    }
+
+    if (f.size > maxFileSizeBytes) {
+      setFile(null)
+      setError(`File is too large (${formatFileSize(f.size)}). Maximum allowed size is ${formatFileSize(maxFileSizeBytes)}.`)
+      return
+    }
+
     if (!ACCEPTED_MIME_TYPES.includes(f.type)) {
-      setError(`Unsupported file type "${f.type || f.name.split('.').pop()}". Allowed: PDF, TXT, MD, DOCX`)
+      setFile(null)
+      setError(`Unsupported file type "${f.type || f.name.split('.').pop()}". Allowed: PDF, TXT, MD, DOCX, JSON`)
       return
     }
     setError(null)
@@ -58,7 +100,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   }
 
   const submit = async () => {
-    if (!file || !title.trim()) return
+    if (!file || !title.trim() || error || settingsLoading || maxFileSizeBytes === null) return
     setLoading(true)
     setError(null)
     try {
@@ -70,6 +112,8 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
       setLoading(false)
     }
   }
+
+  const canSelectFile = !settingsLoading && maxFileSizeBytes !== null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
@@ -83,15 +127,21 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
 
         <div className="p-6 space-y-5">
           <div
-            onClick={() => inputRef.current?.click()}
-            onDragOver={e => { e.preventDefault(); setDragging(true) }}
+            onClick={() => { if (canSelectFile) inputRef.current?.click() }}
+            onDragOver={e => { if (!canSelectFile) return; e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
-            onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
-            className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-              dragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/50'
+            onDrop={e => { e.preventDefault(); setDragging(false); if (!canSelectFile) return; const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+            className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+              canSelectFile ? 'cursor-pointer' : 'cursor-not-allowed opacity-75'
+            } ${
+              dragging
+                ? 'border-indigo-500 bg-indigo-500/10'
+                : canSelectFile
+                  ? 'border-slate-700 hover:border-slate-600 hover:bg-slate-800/50'
+                  : 'border-slate-700'
             }`}
           >
-            <input ref={inputRef} type="file" className="hidden" accept={ACCEPTED_EXTENSIONS} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+            <input ref={inputRef} type="file" className="hidden" accept={ACCEPTED_EXTENSIONS} disabled={!canSelectFile} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
             {file ? (
               <div className="flex items-center justify-center gap-3">
                 <div className="w-10 h-10 bg-indigo-600/20 rounded-lg flex items-center justify-center shrink-0">
@@ -99,14 +149,20 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
                 </div>
                 <div className="text-left">
                   <p className="text-white font-medium text-sm">{file.name}</p>
-                  <p className="text-slate-500 text-xs">{(file.size / 1024).toFixed(1)} KB</p>
+                  <p className="text-slate-500 text-xs">{formatFileSize(file.size)}</p>
                 </div>
               </div>
             ) : (
               <>
                 <Upload className="w-8 h-8 text-slate-500 mx-auto mb-3" />
-                <p className="text-slate-400 text-sm">Drop a file here or <span className="text-indigo-400">browse</span></p>
-                <p className="text-slate-600 text-xs mt-1">PDF, DOCX, TXT, MD, JSON · Max 50 MB</p>
+                <p className="text-slate-400 text-sm">
+                  {settingsLoading
+                    ? 'Loading upload settings...'
+                    : <>Drop a file here or <span className="text-indigo-400">browse</span></>}
+                </p>
+                <p className="text-slate-600 text-xs mt-1">
+                  PDF, DOCX, TXT, MD, JSON{maxFileSizeBytes !== null ? ` · Max ${formatFileSize(maxFileSizeBytes)}` : ''}
+                </p>
               </>
             )}
           </div>
@@ -161,7 +217,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancel</button>
           <button
             onClick={submit}
-            disabled={!file || !title.trim() || loading}
+            disabled={!file || !title.trim() || loading || settingsLoading || maxFileSizeBytes === null}
             className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
           >
             {loading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Uploading...</> : <><Upload className="w-4 h-4" />Upload</>}

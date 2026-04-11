@@ -21,6 +21,7 @@ services:
       Auth__JwtSigningKey: ${DOCVAULT_JWT_KEY}
       Auth__AdminEmail: ${DOCVAULT_ADMIN_EMAIL}
       Auth__AdminPassword: ${DOCVAULT_ADMIN_PASSWORD}
+      Upload__MaxFileSizeBytes: ${DOCVAULT_UPLOAD_MAX_FILE_SIZE_BYTES:-52428800}
     depends_on:
       - db
     ports:
