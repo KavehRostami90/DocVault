@@ -1,13 +1,27 @@
 # API Reference
 
-Base URL (local): `http://localhost:8080`
+Base URL:
+
+| Environment | URL |
+|---|---|
+| Docker | `http://localhost:8080` |
+| Development | `https://localhost:<port>` |
+| Production | configured via Azure App Settings |
 
 All error responses follow RFC 7807 `application/problem+json`. Every request carries an `X-Correlation-Id` header injected by `CorrelationIdMiddleware`.
 
-Interactive docs:
+Interactive docs (available once the API is running):
 - **Scalar UI**: `/scalar/v1`
 - **Swagger UI**: `/swagger`
 - **OpenAPI spec**: `/openapi/v1.json`
+
+---
+
+## Authentication
+
+Endpoints under `/api/v1/` (except `/auth/`) require a `Bearer` token in the `Authorization` header. Obtain a token via `POST /auth/login` or `POST /auth/refresh`.
+
+The refresh token is stored in an httpOnly cookie (`SameSite=None; Secure`). Include `credentials: 'include'` (or equivalent) in all requests so the browser sends the cookie automatically.
 
 ---
 
@@ -22,6 +36,86 @@ All business endpoints are versioned via the URL segment:
 The current version is **v1**. The server returns an `api-supported-versions` response header listing all available versions.
 
 Health endpoints (`/health/live`, `/health/ready`) are infrastructure probes and are **not** versioned.
+
+---
+
+## Auth
+
+### `POST /api/v1/auth/register`
+Create a new `User` account.
+
+**Body:**
+```json
+{ "email": "user@example.com", "password": "Secret1234!" }
+```
+
+**Response `200 OK`:** `TokenResponse`
+
+---
+
+### `POST /api/v1/auth/login`
+Authenticate and receive tokens.
+
+**Body:**
+```json
+{ "email": "user@example.com", "password": "Secret1234!" }
+```
+
+**Response `200 OK`:**
+```json
+{ "accessToken": "<jwt>", "expiresIn": 900 }
+```
+
+The refresh token is set as an httpOnly cookie.
+
+---
+
+### `POST /api/v1/auth/guest`
+Create a temporary `Guest` account. The account and all its documents are automatically expired after 24 hours.
+
+**Response `200 OK`:** `TokenResponse`
+
+---
+
+### `POST /api/v1/auth/refresh`
+Exchange a valid refresh token cookie for a new access token. Called automatically by the frontend client on 401 responses.
+
+**Response `200 OK`:** `TokenResponse`
+
+---
+
+### `POST /api/v1/auth/logout`
+Revoke the current refresh token and clear the cookie.
+
+**Response `200 OK`**
+
+---
+
+### `GET /api/v1/auth/me`
+Return the current user's profile.
+
+**Response `200 OK`:**
+```json
+{ "id": "<uuid>", "email": "user@example.com", "roles": ["User"] }
+```
+
+---
+
+## Admin
+
+All admin endpoints require the `Admin` role.
+
+### `GET /api/v1/admin/users`
+List all registered users.
+
+**Response `200 OK`:** `UserSummary[]`
+
+---
+
+### `GET /api/v1/admin/documents`
+List all documents across all users (ignores ownership filtering).
+
+Supports the same query parameters as `GET /api/v1/documents`.
 
 ---
 

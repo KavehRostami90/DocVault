@@ -1,4 +1,4 @@
-import { del, get, post, put } from './client'
+import { del, get, getBlob, post, put } from './client'
 import type { DocumentListItem, PageResponse } from '../types'
 import type { AdminDocumentFilter } from '../pages/admin/adminFilters'
 
@@ -45,6 +45,10 @@ export const adminApi = {
   },
 
   deleteDocument: (id: string) => del(`/admin/documents/${id}`),
+
+  getDocumentPreviewBlob: (id: string) => getBlob(`/admin/documents/${id}/preview`),
+
+  getDocumentDownloadBlob: (id: string) => getBlob(`/admin/documents/${id}/download`),
 
   reindexDocument: (id: string) =>
     post<void>(`/admin/documents/${id}/reindex`, {}),

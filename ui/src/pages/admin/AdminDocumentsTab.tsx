@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { RefreshCw, Trash2 } from 'lucide-react'
+import { Download, Eye, RefreshCw, Trash2 } from 'lucide-react'
 import { adminApi, type AdminDocument } from '../../api/admin'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import StatusBadge from '../../components/StatusBadge'
@@ -76,6 +76,39 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
     }
   }
 
+  async function handlePreview(doc: AdminDocument) {
+    try {
+      const blob = await adminApi.getDocumentPreviewBlob(doc.id)
+      const objectUrl = window.URL.createObjectURL(blob)
+      const previewWindow = window.open(objectUrl, '_blank', 'noopener,noreferrer')
+
+      if (!previewWindow)
+        window.location.assign(objectUrl)
+
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000)
+    } catch {
+      toast(`Preview failed for "${doc.title}".`)
+    }
+  }
+
+  async function handleDownload(doc: AdminDocument) {
+    try {
+      const blob = await adminApi.getDocumentDownloadBlob(doc.id)
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = objectUrl
+      link.download = doc.fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5_000)
+    } catch {
+      toast(`Download failed for "${doc.title}".`)
+    }
+  }
+
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -141,6 +174,20 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
                 <td className="px-4 py-3 text-slate-400">{new Date(d.createdAt).toLocaleDateString()}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handlePreview(d)}
+                      className="p-1.5 rounded text-slate-500 hover:text-sky-400 hover:bg-sky-500/10 transition-colors"
+                      title="Preview document"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDownload(d)}
+                      className="p-1.5 rounded text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      title="Download document"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={() => handleReindex(d)}
                       className="p-1.5 rounded text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors"

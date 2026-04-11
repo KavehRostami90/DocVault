@@ -4,8 +4,10 @@ using DocVault.Api.Contracts.Common;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Mappers;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.UseCases.Admin;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
+using DocVault.Application.UseCases.Documents.GetDocumentFile;
 using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Domain.Documents;
 using DocVault.Infrastructure.Auth;
@@ -84,6 +86,48 @@ public static class AdminEndpoints
     .Produces(StatusCodes.Status204NoContent)
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Admin: re-queue a document for indexing");
+
+    group.MapGet("/documents/{id:guid}/preview", async (
+      Guid id,
+      GetDocumentFileHandler handler,
+      IFileStorage storage,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      return await DocumentFileEndpointHelper.ServeAsync(
+        id,
+        "inline",
+        handler,
+        storage,
+        callerId: null,
+        isAdmin: true,
+        httpContext,
+        ct);
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Admin: preview any document");
+
+    group.MapGet("/documents/{id:guid}/download", async (
+      Guid id,
+      GetDocumentFileHandler handler,
+      IFileStorage storage,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      return await DocumentFileEndpointHelper.ServeAsync(
+        id,
+        "attachment",
+        handler,
+        storage,
+        callerId: null,
+        isAdmin: true,
+        httpContext,
+        ct);
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Admin: download any document");
 
     // ── Users ─────────────────────────────────────────────────────────────────
 

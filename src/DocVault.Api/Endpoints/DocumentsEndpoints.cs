@@ -13,7 +13,6 @@ using DocVault.Application.UseCases.Documents.ImportDocument;
 using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
 using DocVault.Domain.Documents;
-using Microsoft.Net.Http.Headers;
 
 namespace DocVault.Api.Endpoints;
 
@@ -67,12 +66,13 @@ public static class DocumentsEndpoints
       HttpContext httpContext,
       CancellationToken ct) =>
     {
-      return await ServeDocumentFileAsync(
+      return await DocumentFileEndpointHelper.ServeAsync(
         id,
         "inline",
         handler,
         storage,
-        currentUser,
+        currentUser.UserId,
+        currentUser.IsAdmin,
         httpContext,
         ct);
     })
@@ -89,12 +89,13 @@ public static class DocumentsEndpoints
       HttpContext httpContext,
       CancellationToken ct) =>
     {
-      return await ServeDocumentFileAsync(
+      return await DocumentFileEndpointHelper.ServeAsync(
         id,
         "attachment",
         handler,
         storage,
-        currentUser,
+        currentUser.UserId,
+        currentUser.IsAdmin,
         httpContext,
         ct);
     })
@@ -169,48 +170,5 @@ public static class DocumentsEndpoints
     .WithDescription("Deletes a document by identifier.");
 
     return routes;
-  }
-
-  private static async Task<IResult> ServeDocumentFileAsync(
-    Guid id,
-    string dispositionType,
-    GetDocumentFileHandler handler,
-    IFileStorage storage,
-    ICurrentUser currentUser,
-    HttpContext httpContext,
-    CancellationToken ct)
-  {
-    var outcome = await handler.HandleAsync(
-      new GetDocumentFileQuery(new DocumentId(id), currentUser.UserId, currentUser.IsAdmin),
-      ct);
-
-    if (!outcome.IsSuccess)
-      return Results.NotFound();
-
-    try
-    {
-      var file = outcome.Value!;
-      httpContext.Response.Headers.Append(
-        HeaderNames.ContentDisposition,
-        CreateContentDisposition(dispositionType, file.FileName));
-
-      var stream = await storage.ReadAsync(file.StoragePath, ct);
-      return Results.Stream(stream, file.ContentType, enableRangeProcessing: true);
-    }
-    catch (FileNotFoundException)
-    {
-      return Results.NotFound();
-    }
-  }
-
-  private static string CreateContentDisposition(string dispositionType, string fileName)
-  {
-    var headerValue = new ContentDispositionHeaderValue(dispositionType)
-    {
-      FileName = fileName,
-      FileNameStar = fileName
-    };
-
-    return headerValue.ToString();
   }
 }
