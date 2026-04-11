@@ -136,7 +136,7 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={id => { setShowUpload(false); navigate(`/documents/${id}`) }} />}
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={ids => { setShowUpload(false); if (ids.length === 1) { navigate(`/documents/${ids[0]}`) } else { load() } }} />}
     </div>
   )
 }
