@@ -16,8 +16,12 @@ export default function ConfirmDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
-        <h2 className="text-white font-semibold text-lg mb-2">{title}</h2>
-        <p className="text-slate-400 text-sm mb-6">{message}</p>
+        <h2 className="text-white font-semibold text-lg mb-2">
+          {title}
+        </h2>
+        <p className="text-slate-400 text-sm mb-6 break-words">
+          {message}
+          </p>
         <div className="flex justify-end gap-3">
           <button
             onClick={onCancel}

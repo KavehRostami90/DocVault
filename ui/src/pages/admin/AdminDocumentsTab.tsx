@@ -247,7 +247,8 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
       {pendingDelete && (
         <ConfirmDialog
           title="Delete document"
-          message={`Are you sure you want to delete "${pendingDelete.title}"? This action cannot be undone.`}
+          message={`Are you sure you want to delete "${pendingDelete.title}"? 
+          This action cannot be undone.`}
           confirmLabel="Delete"
           onConfirm={handleDeleteConfirm}
           onCancel={() => setPendingDelete(null)}
