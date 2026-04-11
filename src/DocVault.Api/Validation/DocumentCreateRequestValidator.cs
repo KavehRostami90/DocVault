@@ -1,13 +1,17 @@
 using DocVault.Api.Contracts.Documents;
+using DocVault.Api.Composition;
 using DocVault.Domain.Common;
 using FluentValidation;
+using Microsoft.Extensions.Options;
 
 namespace DocVault.Api.Validation;
 
 public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentCreateRequest>
 {
-  public DocumentCreateRequestValidator()
+  public DocumentCreateRequestValidator(IOptions<UploadOptions> uploadOptions)
   {
+    var maxFileSizeBytes = uploadOptions.Value.MaxFileSizeBytes;
+
     RuleFor(x => x.File)
       .NotNull()
       .WithMessage("A file must be uploaded via the 'file' form field.");
@@ -15,8 +19,8 @@ public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentC
     When(x => x.File is not null, () =>
     {
       RuleFor(x => x.File!.Length)
-        .InclusiveBetween(ValidationConstants.Documents.MIN_FILE_SIZE_BYTES, ValidationConstants.Documents.MAX_FILE_SIZE_BYTES)
-        .WithMessage($"File size must be between {ValidationConstants.Documents.MIN_FILE_SIZE_BYTES} bytes and {ValidationConstants.Documents.MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB.");
+        .InclusiveBetween(ValidationConstants.Documents.MIN_FILE_SIZE_BYTES, maxFileSizeBytes)
+        .WithMessage($"File size must be between {ValidationConstants.Documents.MIN_FILE_SIZE_BYTES} bytes and {FormatFileSize(maxFileSizeBytes)}.");
 
       RuleFor(x => x.File!.ContentType)
         .NotEmpty()
@@ -61,5 +65,12 @@ public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentC
     RuleFor(x => x.Tags)
       .Must(tags => tags.Distinct(StringComparer.OrdinalIgnoreCase).Count() == tags.Count)
       .WithMessage("Tags cannot contain duplicates.");
+  }
+
+  private static string FormatFileSize(long bytes)
+  {
+    if (bytes < 1024) return $"{bytes} bytes";
+    if (bytes < 1024 * 1024) return $"{bytes / 1024d:F1} KB";
+    return $"{bytes / 1024d / 1024d:F1} MB";
   }
 }

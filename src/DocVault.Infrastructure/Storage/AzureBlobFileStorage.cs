@@ -25,6 +25,9 @@ public sealed class AzureBlobFileStorage : IFileStorage
   public async Task<Stream> ReadAsync(string path, CancellationToken cancellationToken = default)
   {
     var blob = _container.GetBlobClient(path);
+    if (!await blob.ExistsAsync(cancellationToken))
+      throw new FileNotFoundException($"Blob '{path}' was not found.", path);
+
     var response = await blob.DownloadStreamingAsync(cancellationToken: cancellationToken);
     return response.Value.Content;
   }

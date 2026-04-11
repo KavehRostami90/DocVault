@@ -12,7 +12,7 @@ export function initClient(getToken: () => string | null, onUnauthorized: () => 
   _onUnauthorized = onUnauthorized
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const token = _getToken?.()
 
   const headers: Record<string, string> = {
@@ -39,12 +39,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!r.ok) throw new Error(await parseApiError(r))
+  return r
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const r = await send(path, init)
   if (r.status === 204) return undefined as unknown as T
   return r.json() as Promise<T>
 }
 
 export async function get<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'GET' })
+}
+
+export async function getBlob(path: string): Promise<Blob> {
+  const response = await send(path, { method: 'GET' })
+  return response.blob()
 }
 
 export async function post<T>(path: string, body: unknown): Promise<T> {

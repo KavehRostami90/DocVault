@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle } from 'lucide-react'
-import { getDocument, updateTags, deleteDocument } from '../api/documents'
+import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle } from 'lucide-react'
+import { getDocument, getDocumentDownloadBlob, getDocumentPreviewBlob, updateTags, deleteDocument } from '../api/documents'
 import StatusBadge from '../components/StatusBadge'
 import type { DocumentDetail } from '../types'
 
@@ -22,6 +22,9 @@ export default function DocumentDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [tagsDirty, setTagsDirty] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [fileActionError, setFileActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -46,6 +49,57 @@ export default function DocumentDetailPage() {
     if (!id) return
     setDeleting(true)
     try { await deleteDocument(id); navigate('/documents', { replace: true }) } finally { setDeleting(false) }
+  }
+
+  const handlePreview = async () => {
+    if (!id) return
+
+    setPreviewing(true)
+    setFileActionError(null)
+
+    try {
+      const blob = await getDocumentPreviewBlob(id)
+      const objectUrl = window.URL.createObjectURL(blob)
+
+      const win = window.open(objectUrl, '_blank')
+      if (!win) {
+        // Popup blocker prevented the tab from opening — clean up and inform the user.
+        window.URL.revokeObjectURL(objectUrl)
+        setFileActionError('Preview was blocked — allow popups for this site and try again.')
+        return
+      }
+
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000)
+    } catch (e) {
+      setFileActionError(e instanceof Error ? e.message : 'Failed to preview document')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  const handleDownload = async () => {
+    if (!id || !doc) return
+
+    setDownloading(true)
+    setFileActionError(null)
+
+    try {
+      const blob = await getDocumentDownloadBlob(id)
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = objectUrl
+      link.download = doc.fileName
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5_000)
+    } catch (e) {
+      setFileActionError(e instanceof Error ? e.message : 'Failed to download document')
+    } finally {
+      setDownloading(false)
+    }
   }
 
   if (loading) return (
@@ -82,6 +136,27 @@ export default function DocumentDetailPage() {
           </div>
           <StatusBadge status={doc.status} />
         </div>
+        <div className="flex flex-wrap gap-3 mb-6">
+          <button
+            onClick={handlePreview}
+            disabled={previewing}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          >
+            <Eye className="w-4 h-4" />{previewing ? 'Opening preview...' : 'Preview'}
+          </button>
+          <button
+            onClick={handleDownload}
+            disabled={downloading}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          >
+            <Download className="w-4 h-4" />{downloading ? 'Preparing download...' : 'Download'}
+          </button>
+        </div>
+        {fileActionError && (
+          <div className="mb-6 rounded-lg border border-red-900/40 bg-red-900/10 px-4 py-3 text-sm text-red-300">
+            {fileActionError}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {[['Content Type', doc.contentType], ['File Size', formatBytes(doc.size)], ['Status', doc.status], ['ID', doc.id.slice(0, 8) + '...']].map(([label, value]) => (
             <div key={label} className="bg-slate-800/50 rounded-lg p-3">

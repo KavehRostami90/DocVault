@@ -1,4 +1,4 @@
-import { get, put, del, upload } from './client'
+import { get, getBlob, put, del, upload } from './client'
 import type { DocumentListItem, DocumentDetail, PageResponse } from '../types'
 
 export interface ListParams {
@@ -25,6 +25,14 @@ export function listDocuments(p: ListParams = {}): Promise<PageResponse<Document
 
 export function getDocument(id: string): Promise<DocumentDetail> {
   return get(`/documents/${id}`)
+}
+
+export function getDocumentPreviewBlob(id: string): Promise<Blob> {
+  return getBlob(`/documents/${id}/preview`)
+}
+
+export function getDocumentDownloadBlob(id: string): Promise<Blob> {
+  return getBlob(`/documents/${id}/download`)
 }
 
 export function uploadDocument(title: string, tags: string[], file: File): Promise<{ id: string }> {

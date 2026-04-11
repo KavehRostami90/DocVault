@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { adminApi, type AdminUser } from '../../api/admin'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import type { AdminUserFilter } from './adminFilters'
 
 const ALL_ROLES = ['Admin', 'User']
 
-export default function AdminUsersTab() {
+interface Props {
+  filter?: AdminUserFilter
+  onClearFilter?: () => void
+}
+
+export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -57,6 +63,21 @@ export default function AdminUsersTab() {
     }
   }
 
+  const filteredUsers = useMemo(() => {
+    switch (filter) {
+      case 'registered':
+        return users.filter(u => !u.isGuest)
+      case 'guests':
+        return users.filter(u => u.isGuest)
+      case 'admins':
+        return users.filter(u => u.roles.includes('Admin'))
+      default:
+        return users
+    }
+  }, [filter, users])
+
+  const filterLabel = userFilterLabel(filter)
+
   return (
     <div className="space-y-4">
       {toastMsg && (
@@ -70,6 +91,22 @@ export default function AdminUsersTab() {
           {error}
         </div>
       )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-white font-medium">{filterLabel}</h2>
+          <p className="text-sm text-slate-500">{filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}</p>
+        </div>
+        {filter !== 'all' && onClearFilter && (
+          <button
+            type="button"
+            onClick={onClearFilter}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
+          >
+            Show all users
+          </button>
+        )}
+      </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
@@ -85,7 +122,9 @@ export default function AdminUsersTab() {
           <tbody>
             {loading ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
-            ) : users.map(u => (
+            ) : filteredUsers.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No users found for this category.</td></tr>
+            ) : filteredUsers.map(u => (
               <tr key={u.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
                 <td className="px-4 py-3">
                   <div className="text-white font-medium">{u.displayName || '—'}</div>
@@ -145,4 +184,17 @@ export default function AdminUsersTab() {
       )}
     </div>
   )
+}
+
+function userFilterLabel(filter: AdminUserFilter): string {
+  switch (filter) {
+    case 'registered':
+      return 'Registered Users'
+    case 'guests':
+      return 'Guest Users'
+    case 'admins':
+      return 'Admin Users'
+    default:
+      return 'All Users'
+  }
 }

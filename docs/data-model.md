@@ -84,14 +84,24 @@ Events are collected on the aggregate (`AggregateRoot<TId>.DomainEvents`) and di
 
 ## Database Migrations
 
-Migrations live in `src/DocVault.Infrastructure/Migrations/`. Apply with:
+Migrations live in `src/DocVault.Infrastructure/Migrations/`. The API applies pending migrations automatically on startup, so you rarely need to run them manually.
+
+To apply manually (ensure the `db` container is running first):
 
 ```bash
-# Ensure the db container is running first
 docker compose up -d db
 
-export DOCVAULT_DB="Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault"
+# Use the credentials from your .env file
 dotnet ef database update \
+  --project src/DocVault.Infrastructure \
+  --startup-project src/DocVault.Api \
+  -- --connectionString "Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=<DOCVAULT_DB_PASSWORD>"
+```
+
+To add a new migration:
+
+```bash
+dotnet ef migrations add <MigrationName> \
   --project src/DocVault.Infrastructure \
   --startup-project src/DocVault.Api
 ```

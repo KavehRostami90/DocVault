@@ -1,5 +1,6 @@
-import { del, get, post, put } from './client'
+import { del, get, getBlob, post, put } from './client'
 import type { DocumentListItem, PageResponse } from '../types'
+import type { AdminDocumentFilter } from '../pages/admin/adminFilters'
 
 export interface AdminUser {
   id: string
@@ -31,10 +32,23 @@ export const adminApi = {
   updateUserRoles: (id: string, roles: string[]) =>
     put(`/admin/users/${id}/roles`, { roles }),
 
-  listDocuments: (page = 1, size = 50) =>
-    get<PageResponse<AdminDocument>>(`/admin/documents?page=${page}&size=${size}`),
+  listDocuments: (page = 1, size = 50, filter: AdminDocumentFilter = 'all') => {
+    const query = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+    })
+
+    if (filter !== 'all')
+      query.set('status', filter)
+
+    return get<PageResponse<AdminDocument>>(`/admin/documents?${query}`)
+  },
 
   deleteDocument: (id: string) => del(`/admin/documents/${id}`),
+
+  getDocumentPreviewBlob: (id: string) => getBlob(`/admin/documents/${id}/preview`),
+
+  getDocumentDownloadBlob: (id: string) => getBlob(`/admin/documents/${id}/download`),
 
   reindexDocument: (id: string) =>
     post<void>(`/admin/documents/${id}/reindex`, {}),

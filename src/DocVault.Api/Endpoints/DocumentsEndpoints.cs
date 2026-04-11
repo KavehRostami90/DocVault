@@ -4,9 +4,11 @@ using DocVault.Api.Validation;
 using DocVault.Api.Mappers;
 using DocVault.Api.Middleware;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
+using DocVault.Application.UseCases.Documents.GetDocumentFile;
 using DocVault.Application.UseCases.Documents.ImportDocument;
 using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
@@ -55,6 +57,52 @@ public static class DocumentsEndpoints
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Get a document")
     .WithDescription("Returns a single document by identifier.");
+
+    group.MapGet("/{id:guid}/preview", async (
+      Guid id,
+      GetDocumentFileHandler handler,
+      IFileStorage storage,
+      ICurrentUser currentUser,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      return await DocumentFileEndpointHelper.ServeAsync(
+        id,
+        "inline",
+        handler,
+        storage,
+        currentUser.UserId,
+        currentUser.IsAdmin,
+        httpContext,
+        ct);
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Preview a document")
+    .WithDescription("Streams the original file inline when the browser supports the content type.");
+
+    group.MapGet("/{id:guid}/download", async (
+      Guid id,
+      GetDocumentFileHandler handler,
+      IFileStorage storage,
+      ICurrentUser currentUser,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      return await DocumentFileEndpointHelper.ServeAsync(
+        id,
+        "attachment",
+        handler,
+        storage,
+        currentUser.UserId,
+        currentUser.IsAdmin,
+        httpContext,
+        ct);
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Download a document")
+    .WithDescription("Downloads the original stored file for a document.");
 
     group.MapPost("/", async (
       DocumentCreateRequest request,
