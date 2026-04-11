@@ -4,8 +4,14 @@ import { adminApi, type AdminDocument } from '../../api/admin'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import StatusBadge from '../../components/StatusBadge'
 import type { DocumentStatus } from '../../types'
+import type { AdminDocumentFilter } from './adminFilters'
 
-export default function AdminDocumentsTab() {
+interface Props {
+  filter?: AdminDocumentFilter
+  onClearFilter?: () => void
+}
+
+export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Props) {
   const [docs, setDocs] = useState<AdminDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -17,12 +23,17 @@ export default function AdminDocumentsTab() {
   const PAGE_SIZE = 20
 
   useEffect(() => {
+    setPage(1)
+  }, [filter])
+
+  useEffect(() => {
     load(page)
-  }, [page])
+  }, [page, filter])
 
   function load(p: number) {
     setLoading(true)
-    adminApi.listDocuments(p, PAGE_SIZE)
+    setError('')
+    adminApi.listDocuments(p, PAGE_SIZE, filter)
       .then(r => {
         setDocs(r.items)
         setTotalCount(r.totalCount)
@@ -53,7 +64,12 @@ export default function AdminDocumentsTab() {
   async function handleReindex(doc: AdminDocument) {
     try {
       await adminApi.reindexDocument(doc.id)
-      setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'Imported' } : d))
+      if (filter !== 'all' && filter !== 'Imported') {
+        setDocs(prev => prev.filter(d => d.id !== doc.id))
+        setTotalCount(c => Math.max(0, c - 1))
+      } else {
+        setDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'Imported' } : d))
+      }
       toast(`"${doc.title}" queued for re-indexing.`)
     } catch {
       toast('Failed to queue document for re-indexing.')
@@ -67,6 +83,7 @@ export default function AdminDocumentsTab() {
   }
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+  const filterLabel = documentFilterLabel(filter)
 
   return (
     <div className="space-y-4">
@@ -82,6 +99,22 @@ export default function AdminDocumentsTab() {
         </div>
       )}
 
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-white font-medium">{filterLabel}</h2>
+          <p className="text-sm text-slate-500">{totalCount} document{totalCount !== 1 ? 's' : ''}</p>
+        </div>
+        {filter !== 'all' && onClearFilter && (
+          <button
+            type="button"
+            onClick={onClearFilter}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
+          >
+            Show all documents
+          </button>
+        )}
+      </div>
+
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -96,6 +129,8 @@ export default function AdminDocumentsTab() {
           <tbody>
             {loading ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
+            ) : docs.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No documents found for this category.</td></tr>
             ) : docs.map(d => (
               <tr key={d.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
                 <td className="px-4 py-3 text-white font-medium max-w-xs truncate">{d.title}</td>
@@ -162,4 +197,8 @@ export default function AdminDocumentsTab() {
       )}
     </div>
   )
+}
+
+function documentFilterLabel(filter: AdminDocumentFilter): string {
+  return filter === 'all' ? 'All Documents' : `${filter} Documents`
 }

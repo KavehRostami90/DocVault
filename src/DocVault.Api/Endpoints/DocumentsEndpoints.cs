@@ -4,13 +4,16 @@ using DocVault.Api.Validation;
 using DocVault.Api.Mappers;
 using DocVault.Api.Middleware;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
+using DocVault.Application.UseCases.Documents.GetDocumentFile;
 using DocVault.Application.UseCases.Documents.ImportDocument;
 using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
 using DocVault.Domain.Documents;
+using Microsoft.Net.Http.Headers;
 
 namespace DocVault.Api.Endpoints;
 
@@ -55,6 +58,50 @@ public static class DocumentsEndpoints
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Get a document")
     .WithDescription("Returns a single document by identifier.");
+
+    group.MapGet("/{id:guid}/preview", async (
+      Guid id,
+      GetDocumentFileHandler handler,
+      IFileStorage storage,
+      ICurrentUser currentUser,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      return await ServeDocumentFileAsync(
+        id,
+        "inline",
+        handler,
+        storage,
+        currentUser,
+        httpContext,
+        ct);
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Preview a document")
+    .WithDescription("Streams the original file inline when the browser supports the content type.");
+
+    group.MapGet("/{id:guid}/download", async (
+      Guid id,
+      GetDocumentFileHandler handler,
+      IFileStorage storage,
+      ICurrentUser currentUser,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      return await ServeDocumentFileAsync(
+        id,
+        "attachment",
+        handler,
+        storage,
+        currentUser,
+        httpContext,
+        ct);
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Download a document")
+    .WithDescription("Downloads the original stored file for a document.");
 
     group.MapPost("/", async (
       DocumentCreateRequest request,
@@ -122,5 +169,48 @@ public static class DocumentsEndpoints
     .WithDescription("Deletes a document by identifier.");
 
     return routes;
+  }
+
+  private static async Task<IResult> ServeDocumentFileAsync(
+    Guid id,
+    string dispositionType,
+    GetDocumentFileHandler handler,
+    IFileStorage storage,
+    ICurrentUser currentUser,
+    HttpContext httpContext,
+    CancellationToken ct)
+  {
+    var outcome = await handler.HandleAsync(
+      new GetDocumentFileQuery(new DocumentId(id), currentUser.UserId, currentUser.IsAdmin),
+      ct);
+
+    if (!outcome.IsSuccess)
+      return Results.NotFound();
+
+    try
+    {
+      var file = outcome.Value!;
+      httpContext.Response.Headers.Append(
+        HeaderNames.ContentDisposition,
+        CreateContentDisposition(dispositionType, file.FileName));
+
+      var stream = await storage.ReadAsync(file.StoragePath, ct);
+      return Results.Stream(stream, file.ContentType, enableRangeProcessing: true);
+    }
+    catch (FileNotFoundException)
+    {
+      return Results.NotFound();
+    }
+  }
+
+  private static string CreateContentDisposition(string dispositionType, string fileName)
+  {
+    var headerValue = new ContentDispositionHeaderValue(dispositionType)
+    {
+      FileName = fileName,
+      FileNameStar = fileName
+    };
+
+    return headerValue.ToString();
   }
 }

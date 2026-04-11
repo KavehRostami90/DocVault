@@ -6,6 +6,7 @@ using DocVault.Application.Pipeline.Stages;
 using DocVault.Application.UseCases.Admin;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
+using DocVault.Application.UseCases.Documents.GetDocumentFile;
 using DocVault.Application.UseCases.Documents.ImportDocument;
 using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
@@ -27,6 +28,7 @@ public static class DependencyInjection
   {
     services.AddScoped<ImportDocumentHandler>();
     services.AddScoped<GetDocumentHandler>();
+    services.AddScoped<GetDocumentFileHandler>();
     services.AddScoped<ListDocumentsHandler>();
     services.AddScoped<UpdateTagsHandler>();
     services.AddScoped<DeleteDocumentHandler>();

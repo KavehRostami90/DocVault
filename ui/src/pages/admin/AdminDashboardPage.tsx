@@ -3,6 +3,7 @@ import { BarChart2, FileText, Shield, Users } from 'lucide-react'
 import AdminOverviewTab from './AdminOverviewTab'
 import AdminUsersTab from './AdminUsersTab'
 import AdminDocumentsTab from './AdminDocumentsTab'
+import type { AdminDocumentFilter, AdminUserFilter } from './adminFilters'
 
 type Tab = 'overview' | 'users' | 'documents'
 
@@ -14,6 +15,18 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 
 export default function AdminDashboardPage() {
   const [tab, setTab] = useState<Tab>('overview')
+  const [userFilter, setUserFilter] = useState<AdminUserFilter>('all')
+  const [documentFilter, setDocumentFilter] = useState<AdminDocumentFilter>('all')
+
+  const openUsers = (filter: AdminUserFilter) => {
+    setUserFilter(filter)
+    setTab('users')
+  }
+
+  const openDocuments = (filter: AdminDocumentFilter) => {
+    setDocumentFilter(filter)
+    setTab('documents')
+  }
 
   return (
     <div className="space-y-6">
@@ -37,9 +50,24 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {tab === 'overview'  && <AdminOverviewTab />}
-      {tab === 'users'     && <AdminUsersTab />}
-      {tab === 'documents' && <AdminDocumentsTab />}
+      {tab === 'overview'  && (
+        <AdminOverviewTab
+          onOpenUsers={openUsers}
+          onOpenDocuments={openDocuments}
+        />
+      )}
+      {tab === 'users'     && (
+        <AdminUsersTab
+          filter={userFilter}
+          onClearFilter={() => setUserFilter('all')}
+        />
+      )}
+      {tab === 'documents' && (
+        <AdminDocumentsTab
+          filter={documentFilter}
+          onClearFilter={() => setDocumentFilter('all')}
+        />
+      )}
     </div>
   )
 }
