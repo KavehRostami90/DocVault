@@ -2,6 +2,7 @@ import { get } from './client'
 
 export interface UploadSettings {
   maxFileSizeBytes: number
+  maxUploadCount: number
 }
 
 let uploadSettingsPromise: Promise<UploadSettings> | null = null
