@@ -11,6 +11,7 @@ public static class ValidationConstants
         public const int MIN_TITLE_LENGTH = 1;
         public const long MAX_FILE_SIZE_BYTES = 50L * 1024 * 1024; // 50 MB
         public const long MIN_FILE_SIZE_BYTES = 1;
+        public const int MAX_UPLOAD_COUNT = 10;
         
         public static readonly string[] ALLOWED_CONTENT_TYPES =
         [

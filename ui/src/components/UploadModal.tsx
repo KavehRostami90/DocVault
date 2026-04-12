@@ -80,6 +80,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   const [uploadDone, setUploadDone] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(true)
   const [maxFileSizeBytes, setMaxFileSizeBytes] = useState<number | null>(null)
+  const [maxUploadCount, setMaxUploadCount] = useState<number | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -89,6 +90,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
       .then(settings => {
         if (cancelled) return
         setMaxFileSizeBytes(settings.maxFileSizeBytes)
+        setMaxUploadCount(settings.maxUploadCount)
       })
       .catch(() => {
         if (cancelled) return
@@ -102,20 +104,24 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   }, [])
 
   const addFiles = useCallback((files: File[]) => {
-    if (maxFileSizeBytes === null) return
+    if (maxFileSizeBytes === null || maxUploadCount === null) return
     setEntries(prev => {
       const existingNames = new Set(prev.map(e => e.file.name))
+      const available = maxUploadCount - prev.length
+      if (available <= 0) return prev
       const newEntries = files
         .filter(f => !existingNames.has(f.name))
+        .slice(0, available)
         .map(f => createEntry(f, maxFileSizeBytes))
       return [...prev, ...newEntries]
     })
-  }, [maxFileSizeBytes])
+  }, [maxFileSizeBytes, maxUploadCount])
 
-  const canSelectFile = !settingsLoading && maxFileSizeBytes !== null && !uploading
+  const canSelectFile = !settingsLoading && maxFileSizeBytes !== null && maxUploadCount !== null && !uploading && entries.length < (maxUploadCount ?? Infinity)
 
   const pendingValid = entries.filter(e => e.uploadStatus === 'pending' && !e.validationError)
-  const canUpload = !uploading && !settingsLoading && maxFileSizeBytes !== null && pendingValid.length > 0
+  const canUpload = !uploading && !settingsLoading && maxFileSizeBytes !== null && maxUploadCount !== null && pendingValid.length > 0
+  const atLimit = maxUploadCount !== null && entries.length >= maxUploadCount
 
   const submit = async () => {
     if (!canUpload) return
@@ -167,7 +173,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
             <h2 className="text-lg font-semibold text-white">Upload Documents</h2>
             {entries.length > 0 && (
               <p className="text-slate-500 text-xs mt-0.5">
-                {entries.length} file{entries.length !== 1 ? 's' : ''} selected
+                {entries.length}{maxUploadCount !== null ? ` / ${maxUploadCount}` : ''} file{entries.length !== 1 ? 's' : ''} selected
               </p>
             )}
           </div>
@@ -215,10 +221,14 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
             <p className="text-slate-400 text-sm">
               {settingsLoading
                 ? 'Loading upload settings...'
-                : <><span className="text-indigo-400">Click to browse</span> or drag &amp; drop — multiple files supported</>}
+                : atLimit
+                  ? <span className="text-amber-400">Limit reached ({maxUploadCount} files max). Remove a file to add another.</span>
+                  : <><span className="text-indigo-400">Click to browse</span> or drag &amp; drop — multiple files supported</>}
             </p>
             <p className="text-slate-600 text-xs mt-1">
-              PDF, DOCX, TXT, MD, JSON{maxFileSizeBytes !== null ? ` · Max ${formatFileSize(maxFileSizeBytes)} each` : ''}
+              PDF, DOCX, TXT, MD, JSON
+              {maxFileSizeBytes !== null ? ` · Max ${formatFileSize(maxFileSizeBytes)} each` : ''}
+              {maxUploadCount !== null ? ` · Up to ${maxUploadCount} files` : ''}
             </p>
           </div>
 
