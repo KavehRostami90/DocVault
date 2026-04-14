@@ -12,7 +12,7 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 /// </summary>
 internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
 {
-  public bool CanHandle(DocVaultDbContext db) => true; // fallback — always matches
+  public bool CanHandle(DocVaultDbContext db, float[]? queryVector) => true; // fallback — always matches
 
   public async Task<Page<SearchResultItem>> SearchAsync(
     DocVaultDbContext db,
@@ -20,6 +20,7 @@ internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
     int page,
     int size,
     Guid? ownerId,
+    float[]? queryVector,
     CancellationToken ct)
   {
     IQueryable<Document> query = db.Documents.Include(d => d.Tags);

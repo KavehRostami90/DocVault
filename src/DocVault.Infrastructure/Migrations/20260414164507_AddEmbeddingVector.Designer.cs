@@ -3,6 +3,7 @@ using System;
 using DocVault.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -13,9 +14,11 @@ using Pgvector;
 namespace DocVault.Infrastructure.Migrations
 {
     [DbContext(typeof(DocVaultDbContext))]
-    partial class DocVaultDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260414164507_AddEmbeddingVector")]
+    partial class AddEmbeddingVector
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

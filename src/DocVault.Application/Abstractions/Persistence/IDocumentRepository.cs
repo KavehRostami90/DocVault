@@ -25,10 +25,11 @@ public interface IDocumentRepository
   Task<Page<Document>> ListAsync(PageRequest request, Guid? ownerId = null, CancellationToken cancellationToken = default);
 
   /// <summary>
-  /// Performs a full-text search and returns ranked result items,
-  /// optionally scoped to a single owner.
+  /// Searches documents and returns ranked result items, optionally scoped to a single owner.
+  /// When <paramref name="queryVector"/> is provided, semantic (pgvector cosine similarity) search
+  /// is used; otherwise falls back to full-text search.
   /// </summary>
-  Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, CancellationToken cancellationToken = default);
+  Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, float[]? queryVector = null, CancellationToken cancellationToken = default);
 
   /// <summary>
   /// Returns the number of documents in each processing status,

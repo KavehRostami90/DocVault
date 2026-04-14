@@ -109,7 +109,7 @@ public sealed partial class IndexingWorker : BackgroundService
     try
     {
       LogProcessing(_logger, item.JobId, item.StoragePath);
-      var extractedText = await RunPipelineAsync(item, ct);
+      var result = await RunPipelineAsync(item, ct);
 
       job.MarkCompleted();
       await importJobRepository.UpdateAsync(job, ct);
@@ -117,7 +117,8 @@ public sealed partial class IndexingWorker : BackgroundService
       var document = await documentRepository.GetAsync(job.DocumentId, ct);
       if (document is not null)
       {
-        document.AttachText(extractedText);
+        document.AttachText(result.Text);
+        document.AttachEmbedding(result.Embedding);
         document.MarkIndexed();
         await documentRepository.UpdateAsync(document, ct);
       }
@@ -132,7 +133,7 @@ public sealed partial class IndexingWorker : BackgroundService
   }
 
   /// <summary>Runs the ingestion pipeline stages for the given work item.</summary>
-  private Task<string> RunPipelineAsync(IndexingWorkItem item, CancellationToken ct)
+  private Task<IngestionResult> RunPipelineAsync(IndexingWorkItem item, CancellationToken ct)
     => _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
 
   /// <summary>

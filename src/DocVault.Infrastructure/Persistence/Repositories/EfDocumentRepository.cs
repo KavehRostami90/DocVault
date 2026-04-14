@@ -23,8 +23,10 @@ public class EfDocumentRepository : IDocumentRepository
     _filterRegistry = DocumentFilterRegistry.Build();
 
   // Strategies are tried in order; the first whose CanHandle returns true wins.
+  // PgvectorSearchStrategy handles relational + embedding; PostgresSearchStrategy handles relational FTS fallback.
   private static readonly IReadOnlyList<IDocumentSearchStrategy> _searchStrategies =
   [
+    new PgvectorSearchStrategy(),
     new PostgresSearchStrategy(),
     new InMemorySearchStrategy(),
   ];
@@ -93,17 +95,18 @@ public class EfDocumentRepository : IDocumentRepository
   }
 
   /// <summary>
-  /// Performs a keyword search, delegating to the first applicable
-  /// <see cref="IDocumentSearchStrategy"/> for the active database provider.
+  /// Searches documents using the best available strategy for the active database provider.
+  /// When <paramref name="queryVector"/> is provided and the database is PostgreSQL with pgvector,
+  /// semantic cosine-similarity search is used; otherwise falls back to full-text search.
   /// </summary>
-  public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, CancellationToken cancellationToken = default)
+  public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, float[]? queryVector = null, CancellationToken cancellationToken = default)
   {
     var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    if (terms.Length == 0)
+    if (terms.Length == 0 && queryVector is null)
       return new Page<SearchResultItem>([], page, size, 0);
 
-    var strategy = _searchStrategies.First(s => s.CanHandle(_db));
-    return await strategy.SearchAsync(_db, terms, page, size, ownerId, cancellationToken);
+    var strategy = _searchStrategies.First(s => s.CanHandle(_db, queryVector));
+    return await strategy.SearchAsync(_db, terms, page, size, ownerId, queryVector, cancellationToken);
   }
 
   /// <summary>Returns document counts grouped by processing status.</summary>

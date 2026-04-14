@@ -1,35 +1,52 @@
+using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.Common.Results;
+using Microsoft.Extensions.Logging;
 
 namespace DocVault.Application.UseCases.Search;
 
 /// <summary>
-/// Handles full-text search across documents.
+/// Handles document search. Embeds the query with the configured provider for semantic
+/// (pgvector cosine similarity) search. If embedding fails (e.g. Ollama not running),
+/// the search falls back to PostgreSQL full-text search automatically.
 /// </summary>
-public sealed class SearchDocumentsHandler
+public sealed partial class SearchDocumentsHandler
 {
   private readonly IDocumentRepository _documents;
+  private readonly IEmbeddingProvider  _embedding;
+  private readonly ILogger<SearchDocumentsHandler> _logger;
 
-  /// <summary>
-  /// Creates a new handler for searching documents.
-  /// </summary>
-  /// <param name="documents">Document repository.</param>
-  public SearchDocumentsHandler(IDocumentRepository documents)
+  public SearchDocumentsHandler(
+    IDocumentRepository documents,
+    IEmbeddingProvider embedding,
+    ILogger<SearchDocumentsHandler> logger)
   {
     _documents = documents;
+    _embedding = embedding;
+    _logger    = logger;
   }
 
-  /// <summary>
-  /// Executes a search query and returns a paged result.
-  /// </summary>
-  /// <param name="query">Search query.</param>
-  /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>Result containing the page of search results.</returns>
   public async Task<Result<Page<SearchResultItem>>> HandleAsync(SearchDocumentsQuery query, CancellationToken cancellationToken = default)
   {
     var ownerId = query.IsAdmin ? null : query.OwnerId;
-    var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, ownerId, cancellationToken);
+
+    // Try to embed the query for semantic search; fall back to keyword search on failure.
+    float[]? queryVector = null;
+    try
+    {
+      queryVector = await _embedding.EmbedAsync(query.Query, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+      LogEmbeddingFailed(_logger, ex);
+    }
+
+    var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, ownerId, queryVector, cancellationToken);
     return Result<Page<SearchResultItem>>.Success(page);
   }
+
+  [LoggerMessage(Level = LogLevel.Warning,
+    Message = "Failed to embed search query; falling back to full-text search.")]
+  static partial void LogEmbeddingFailed(ILogger logger, Exception ex);
 }

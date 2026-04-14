@@ -44,7 +44,7 @@ public sealed class ReindexDocumentHandler
     // Derive the storage path from the document ID (matches ImportDocumentHandler convention).
     var storagePath = $"{doc.Id.Value}.bin";
 
-    doc.MarkImported();
+    doc.PrepareForReindex();
     await _documents.UpdateAsync(doc, cancellationToken);
 
     var job = new ImportJob(Guid.NewGuid(), doc.Id, doc.FileName, storagePath, doc.ContentType);

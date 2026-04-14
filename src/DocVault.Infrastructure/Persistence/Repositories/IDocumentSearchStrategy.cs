@@ -11,10 +11,12 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 internal interface IDocumentSearchStrategy
 {
   /// <summary>
-  /// Returns <c>true</c> when this strategy can handle the active database provider.
+  /// Returns <c>true</c> when this strategy can handle the active database provider and query type.
   /// The first matching strategy (by registration order) wins.
   /// </summary>
-  bool CanHandle(DocVaultDbContext db);
+  /// <param name="db">The active database context.</param>
+  /// <param name="queryVector">Non-null when a semantic embedding is available for the query.</param>
+  bool CanHandle(DocVaultDbContext db, float[]? queryVector);
 
   /// <summary>Executes the search and returns a paginated result set.</summary>
   Task<Page<SearchResultItem>> SearchAsync(
@@ -23,5 +25,6 @@ internal interface IDocumentSearchStrategy
     int page,
     int size,
     Guid? ownerId,
+    float[]? queryVector,
     CancellationToken ct);
 }

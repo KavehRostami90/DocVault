@@ -28,7 +28,13 @@ public sealed class OpenAiOptions
   /// </summary>
   /// <remarks>The value determines the size of the embedding vector generated or expected by the provider. The
   /// default is 1536, which matches common OpenAI embedding models.</remarks>
-  public int Dimensions { get; init; } = 1536;
+  /// <summary>
+  /// Number of dimensions to request from the API. Set to 0 (default) to use the model's
+  /// native output size and omit the parameter — required for local providers like Ollama
+  /// that do not support dimension truncation. Set to a positive value only for OpenAI
+  /// models that support it (e.g. text-embedding-3-*).
+  /// </summary>
+  public int Dimensions { get; init; } = 0;
 
   /// <summary>
   /// Gets a value indicating whether the API key is configured and not empty.

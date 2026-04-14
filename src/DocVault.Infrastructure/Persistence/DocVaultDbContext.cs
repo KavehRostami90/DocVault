@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using NpgsqlTypes;
+using Pgvector;
 
 namespace DocVault.Infrastructure.Persistence;
 
@@ -31,9 +32,10 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
       b.HasIndex(t => t.UserId);
     });
 
-    // Stored generated tsvector column — PostgreSQL only; skipped for InMemory (tests/dev)
+    // Relational-only configuration — PostgreSQL only; skipped for InMemory (tests/dev)
     if (Database.IsRelational())
     {
+      // Full-text search: stored generated tsvector column + GIN index
       modelBuilder.Entity<Document>()
         .Property<NpgsqlTsVector>("SearchVector")
         .HasColumnType("tsvector")
@@ -42,6 +44,22 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
       modelBuilder.Entity<Document>()
         .HasIndex("SearchVector")
         .HasMethod("GIN");
+
+      // pgvector: declare the extension, map the Embedding column, and add an HNSW index
+      // for efficient cosine similarity search.
+      modelBuilder.HasPostgresExtension("vector");
+
+      modelBuilder.Entity<Document>()
+        .Property(d => d.Embedding)
+        .HasConversion(
+          v => v != null ? new Vector(v) : null,
+          v => v != null ? v.Memory.ToArray() : null)
+        .HasColumnType("vector(768)");
+
+      modelBuilder.Entity<Document>()
+        .HasIndex(d => d.Embedding)
+        .HasMethod("hnsw")
+        .HasOperators("vector_cosine_ops");
     }
   }
 }

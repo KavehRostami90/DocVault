@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Pgvector.EntityFrameworkCore;
 
 namespace DocVault.Infrastructure.Persistence;
 
@@ -24,7 +25,7 @@ internal sealed class DocVaultDbContextFactory : IDesignTimeDbContextFactory<Doc
       ?? "Host=localhost;Port=5432;Database=docvault;Username=docvault;Password=docvault";
 
     var options = new DbContextOptionsBuilder<DocVaultDbContext>()
-      .UseNpgsql(connectionString)
+      .UseNpgsql(connectionString, o => o.UseVector())
       .Options;
 
     return new DocVaultDbContext(options);
