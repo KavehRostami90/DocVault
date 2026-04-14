@@ -7,7 +7,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     mem_limit: 128m
     cpus: 0.25
 
@@ -22,16 +23,28 @@ services:
       Auth__AdminEmail: ${DOCVAULT_ADMIN_EMAIL}
       Auth__AdminPassword: ${DOCVAULT_ADMIN_PASSWORD}
       Upload__MaxFileSizeBytes: ${DOCVAULT_UPLOAD_MAX_FILE_SIZE_BYTES:-52428800}
+      # Ollama runs on the host — override the base URL so the container can reach it.
+      # On Linux, host.docker.internal requires the extra_hosts entry below.
+      # Override with DOCVAULT_OLLAMA_BASE_URL if Ollama is elsewhere (e.g. another machine).
+      OpenAI__BaseUrl: ${DOCVAULT_OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      OpenAI__ApiKey: ollama
+      OpenAI__Model: ${DOCVAULT_OLLAMA_MODEL:-nomic-embed-text}
+      OpenAI__Dimensions: 0
+    extra_hosts:
+      # Lets the container resolve host.docker.internal on Linux (no-op on Docker Desktop).
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
-      - "8080:8080"
+      - "8081:8080"
     volumes:
       - app-storage:/app/storage
     mem_limit: 512m
     cpus: 0.75
+
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${DOCVAULT_DB_USER}
       POSTGRES_PASSWORD: ${DOCVAULT_DB_PASSWORD}
@@ -40,8 +53,15 @@ services:
       - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     mem_limit: 512m
     cpus: 0.5
+
 volumes:
   db-data:
     driver: local

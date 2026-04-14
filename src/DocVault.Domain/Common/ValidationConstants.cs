@@ -20,7 +20,13 @@ public static class ValidationConstants
             "text/markdown",
             "text/x-markdown",
             "application/json",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/tiff",
+            "image/bmp",
+            "image/webp",
         ];
     }
     

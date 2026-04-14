@@ -7,12 +7,12 @@ namespace DocVault.Application.Pipeline;
 public interface IIngestionPipeline
 {
   /// <summary>
-  /// Runs all pipeline stages for the given file and returns the extracted plain text.
-  /// The caller is responsible for persisting the returned text to the document record.
+  /// Runs all pipeline stages for the given file and returns the extracted text and its embedding.
+  /// The caller is responsible for persisting both values to the document record.
   /// </summary>
   /// <param name="path">Relative storage path of the file to process.</param>
   /// <param name="contentType">MIME content type used to select the correct text extractor.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>The plain text extracted from the file.</returns>
-  Task<string> RunAsync(string path, string contentType, CancellationToken cancellationToken = default);
+  /// <returns>The extracted plain text and its embedding vector.</returns>
+  Task<IngestionResult> RunAsync(string path, string contentType, CancellationToken cancellationToken = default);
 }

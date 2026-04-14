@@ -10,9 +10,15 @@ const ACCEPTED_MIME_TYPES = [
   'text/x-markdown',
   'application/json',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/tiff',
+  'image/bmp',
+  'image/webp',
 ]
 
-const ACCEPTED_EXTENSIONS = '.pdf,.txt,.md,.docx,.json'
+const ACCEPTED_EXTENSIONS = '.pdf,.txt,.md,.docx,.json,.png,.jpg,.jpeg,.gif,.tiff,.tif,.bmp,.webp'
 
 const FILE_TYPE_LABELS: Record<string, string> = {
   'application/pdf': 'PDF',
@@ -21,6 +27,12 @@ const FILE_TYPE_LABELS: Record<string, string> = {
   'text/x-markdown': 'MD',
   'application/json': 'JSON',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'DOCX',
+  'image/png': 'PNG',
+  'image/jpeg': 'JPG',
+  'image/gif': 'GIF',
+  'image/tiff': 'TIFF',
+  'image/bmp': 'BMP',
+  'image/webp': 'WEBP',
 }
 
 function getFileTypeLabel(mimeType: string): string {
@@ -54,7 +66,7 @@ function createEntry(file: File, maxFileSizeBytes: number): FileEntry {
   if (file.size > maxFileSizeBytes) {
     validationError = `Too large (${formatFileSize(file.size)}). Max ${formatFileSize(maxFileSizeBytes)}.`
   } else if (!ACCEPTED_MIME_TYPES.includes(file.type)) {
-    validationError = `Unsupported type "${file.type || file.name.split('.').pop()}". Allowed: PDF, TXT, MD, DOCX, JSON`
+    validationError = `Unsupported type "${file.type || file.name.split('.').pop()}". Allowed: PDF, TXT, MD, DOCX, JSON, PNG, JPG, GIF, TIFF, BMP, WEBP`
   }
   return {
     key: ++entryCounter,
@@ -226,7 +238,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
                   : <><span className="text-indigo-400">Click to browse</span> or drag &amp; drop — multiple files supported</>}
             </p>
             <p className="text-slate-600 text-xs mt-1">
-              PDF, DOCX, TXT, MD, JSON
+              PDF, DOCX, TXT, MD, JSON · PNG, JPG, GIF, TIFF, BMP, WEBP
               {maxFileSizeBytes !== null ? ` · Max ${formatFileSize(maxFileSizeBytes)} each` : ''}
               {maxUploadCount !== null ? ` · Up to ${maxUploadCount} files` : ''}
             </p>

@@ -124,7 +124,7 @@ public sealed class IndexingWorkerTests
                               .ReturnsAsync(document));
 
         pipeline.Setup(p => p.RunAsync(workItem.StoragePath, workItem.ContentType, It.IsAny<CancellationToken>()))
-                .ReturnsAsync("extracted text content");
+                .ReturnsAsync(new IngestionResult("extracted text content", new float[128]));
 
         // Signal when we know processing is done (doc is updated)
         var processingDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -168,6 +168,7 @@ public sealed class IndexingWorkerTests
 
         pipeline.Setup(p => p.RunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("extraction failed"));
+
 
         // Signal when we know failure handling is done (doc UpdateAsync is called)
         var failureDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

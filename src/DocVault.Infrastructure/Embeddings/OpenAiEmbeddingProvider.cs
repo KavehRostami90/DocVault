@@ -29,12 +29,11 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
 
   public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
   {
-    var body = new
-    {
-      model     = _options.Model,
-      input     = text,
-      dimensions = _options.Dimensions,
-    };
+    // The `dimensions` parameter is only supported by certain OpenAI models (text-embedding-3-*).
+    // Local providers such as Ollama ignore or reject it, so we only include it when explicitly set.
+    object body = _options.Dimensions > 0
+      ? new { model = _options.Model, input = text, dimensions = _options.Dimensions }
+      : new { model = _options.Model, input = text };
 
     var response = await _http.PostAsJsonAsync("embeddings", body, cancellationToken);
     response.EnsureSuccessStatusCode();

@@ -6,7 +6,12 @@
       "Bash(dotnet ef:*)",
       "Bash(dotnet test:*)",
       "Bash(git rm:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "WebSearch",
+      "WebFetch(domain:www.nuget.org)",
+      "WebFetch(domain:www.npgsql.org)",
+      "Bash(xargs wc:*)",
+      "Bash(ls *.md docs/)"
     ]
   }
 }

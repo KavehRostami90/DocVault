@@ -10,8 +10,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
-# Install libgssapi-krb5-2 required by Npgsql for GSSAPI support
-RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 curl && rm -rf /var/lib/apt/lists/*
+# Install libgssapi-krb5-2 (Npgsql GSSAPI), tesseract-ocr + English language data (OCR)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libgssapi-krb5-2 \
+      curl \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish .
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -f http://localhost:8080/health/live || exit 1

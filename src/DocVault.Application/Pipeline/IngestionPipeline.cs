@@ -11,7 +11,10 @@ public sealed class IngestionPipeline : IIngestionPipeline
   private readonly IndexStage _index;
   private readonly PipelineDelegates _hooks;
 
-  public IngestionPipeline(FileReadStage fileRead, TextExtractStage textExtract, EmbeddingStage embedding, IndexStage index, PipelineDelegates hooks)
+  public IngestionPipeline(FileReadStage fileRead,
+    TextExtractStage textExtract,
+    EmbeddingStage embedding,
+    IndexStage index, PipelineDelegates hooks)
   {
     _fileRead = fileRead;
     _textExtract = textExtract;
@@ -20,16 +23,14 @@ public sealed class IngestionPipeline : IIngestionPipeline
     _hooks = hooks;
   }
 
-  public async Task<string> RunAsync(string path, string contentType, CancellationToken cancellationToken = default)
+  public async Task<IngestionResult> RunAsync(string path, string contentType, CancellationToken cancellationToken = default)
   {
     var content = await _fileRead.ReadAsync(path, cancellationToken);
     var text = await _textExtract.ExtractAsync(content, contentType, cancellationToken);
     var vector = await _embedding.GenerateAsync(text, cancellationToken);
     await _index.IndexAsync(text, vector, cancellationToken);
     if (_hooks.AfterIndex is not null)
-    {
       await _hooks.AfterIndex(text, vector, cancellationToken);
-    }
-    return text;
+    return new IngestionResult(text, vector);
   }
 }

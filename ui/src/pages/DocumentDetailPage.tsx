@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle } from 'lucide-react'
-import { getDocument, getDocumentDownloadBlob, getDocumentPreviewBlob, updateTags, deleteDocument } from '../api/documents'
+import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle, Copy, Check } from 'lucide-react'
+import { getDocument, getDocumentDownloadBlob, getDocumentPreviewBlob, updateTags, deleteDocument, getExtractedText, getExtractedTextBlob } from '../api/documents'
 import StatusBadge from '../components/StatusBadge'
 import type { DocumentDetail } from '../types'
 
@@ -25,6 +25,11 @@ export default function DocumentDetailPage() {
   const [previewing, setPreviewing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [fileActionError, setFileActionError] = useState<string | null>(null)
+  const [extractedText, setExtractedText] = useState<string | null>(null)
+  const [loadingText, setLoadingText] = useState(false)
+  const [textError, setTextError] = useState<string | null>(null)
+  const [textCopied, setTextCopied] = useState(false)
+  const [downloadingText, setDownloadingText] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -102,6 +107,48 @@ export default function DocumentDetailPage() {
     }
   }
 
+  const handleLoadText = async () => {
+    if (!id) return
+    setLoadingText(true)
+    setTextError(null)
+    try {
+      const text = await getExtractedText(id)
+      setExtractedText(text)
+    } catch (e) {
+      setTextError(e instanceof Error ? e.message : 'Failed to load extracted text')
+    } finally {
+      setLoadingText(false)
+    }
+  }
+
+  const handleCopyText = async () => {
+    if (!extractedText) return
+    await navigator.clipboard.writeText(extractedText)
+    setTextCopied(true)
+    setTimeout(() => setTextCopied(false), 2000)
+  }
+
+  const handleDownloadText = async () => {
+    if (!id || !doc) return
+    setDownloadingText(true)
+    setTextError(null)
+    try {
+      const blob = await getExtractedTextBlob(id)
+      const objectUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = doc.fileName.replace(/\.[^.]+$/, '') + '.txt'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 5_000)
+    } catch (e) {
+      setTextError(e instanceof Error ? e.message : 'Failed to download text')
+    } finally {
+      setDownloadingText(false)
+    }
+  }
+
   if (loading) return (
     <div className="max-w-2xl mx-auto animate-pulse space-y-4">
       <div className="h-4 bg-slate-800 rounded w-32" />
@@ -166,6 +213,63 @@ export default function DocumentDetailPage() {
           ))}
         </div>
       </div>
+
+      {doc.contentType.startsWith('image/') && (
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-slate-400" />
+              <h2 className="text-white font-medium">Extracted Text</h2>
+              <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">OCR</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {extractedText !== null && extractedText.length > 0 && (
+                <button
+                  onClick={handleCopyText}
+                  className="flex items-center gap-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  {textCopied ? <><Check className="w-3 h-3 text-green-400" />Copied</> : <><Copy className="w-3 h-3" />Copy</>}
+                </button>
+              )}
+              <button
+                onClick={handleDownloadText}
+                disabled={downloadingText}
+                className="flex items-center gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Download className="w-3 h-3" />{downloadingText ? 'Downloading...' : 'Download .txt'}
+              </button>
+            </div>
+          </div>
+
+          {doc.status !== 'Indexed' ? (
+            <p className="text-slate-500 text-sm py-4 text-center">
+              {doc.status === 'Pending' || doc.status === 'Imported'
+                ? 'Text extraction is in progress…'
+                : 'Text extraction is not available for this document.'}
+            </p>
+          ) : extractedText === null ? (
+            <div className="text-center py-4">
+              <button
+                onClick={handleLoadText}
+                disabled={loadingText}
+                className="flex items-center gap-2 mx-auto bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+              >
+                <Eye className="w-4 h-4" />{loadingText ? 'Loading…' : 'Show extracted text'}
+              </button>
+            </div>
+          ) : extractedText === '' ? (
+            <p className="text-slate-500 text-sm py-4 text-center">No text was extracted from this image.</p>
+          ) : (
+            <pre className="text-sm text-slate-300 whitespace-pre-wrap bg-slate-800/50 rounded-lg p-4 overflow-auto max-h-72 font-mono leading-relaxed">
+              {extractedText}
+            </pre>
+          )}
+
+          {textError && (
+            <p className="text-red-400 text-xs mt-3">{textError}</p>
+          )}
+        </div>
+      )}
 
       <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 mb-4">
         <div className="flex items-center justify-between mb-4">

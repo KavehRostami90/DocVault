@@ -4,9 +4,9 @@ Base URL:
 
 | Environment | URL |
 |---|---|
-| Docker | `http://localhost:8080` |
+| Docker | `http://localhost:8081` |
 | Development | `https://localhost:<port>` |
-| Production | configured via Azure App Settings |
+| Production | configured via Azure App Settings / environment variables |
 
 All error responses follow RFC 7807 `application/problem+json`. Every request carries an `X-Correlation-Id` header injected by `CorrelationIdMiddleware`.
 
@@ -101,44 +101,26 @@ Return the current user's profile.
 
 ---
 
-## Admin
-
-All admin endpoints require the `Admin` role.
-
-### `GET /api/v1/admin/users`
-List all registered users.
-
-**Response `200 OK`:** `UserSummary[]`
-
----
-
-### `GET /api/v1/admin/documents`
-List all documents across all users (ignores ownership filtering).
-
-Supports the same query parameters as `GET /api/v1/documents`.
-
----
-
 ## Documents
 
-### `POST /api/v1/documents/import`
+### `POST /api/v1/documents`
 Upload a document for storage and background indexing.
 
 **Content-Type:** `multipart/form-data`
 
 | Field | Type | Rules |
 |---|---|---|
-| `file` | file | Required; PDF / TXT / DOCX; 1 byte – 50 MB |
+| `file` | file | Required; PDF / DOCX / TXT / MD / PNG / JPG / …; 1 byte – 50 MB |
 | `title` | string | Required; 1–256 characters |
 | `tags` | string[] | Optional; ≤ 20 tags; 1–50 chars each; alphanumeric + `-_` |
 
 **Response `201 Created`:**
 ```json
-{ "id": "<uuid>", "jobId": "<uuid>" }
+{ "id": "<uuid>" }
 ```
 `Location` header points to `GET /api/v1/documents/{id}`.
 
-The document is immediately stored and its `Status` is set to `Imported`. Background indexing begins asynchronously.
+The document is immediately stored and its `Status` is set to `Imported`. Background indexing (text extraction + embedding) begins asynchronously.
 
 ---
 
@@ -150,31 +132,60 @@ List documents with pagination, filtering, and sorting.
 | `page` | int | 1 | ≥ 1 |
 | `size` | int | 20 | 1–200 |
 | `status` | string | — | `pending`, `imported`, `indexed`, `failed` |
-| `titleFilter` | string | — | Substring match; ≤ 100 chars |
+| `title` | string | — | Substring match; ≤ 100 chars |
+| `tag` | string | — | Filter by tag name |
 | `sort` | string | `createdAt` | `title`, `fileName`, `size`, `status`, `createdAt`, `updatedAt` |
-| `sortDir` | string | `desc` | `asc`, `desc` |
+| `desc` | bool | `true` | Descending sort direction |
 
-**Response `200 OK`:** `PageResponse<DocumentListItem>`
+**Response `200 OK`:** `PageResponse<DocumentListItemResponse>`
 
 ---
 
 ### `GET /api/v1/documents/{id}`
 Get full document details including extracted text and tags.
 
-**Response `200 OK`:** `DocumentReadResponse`  
-**Response `404 Not Found`** if the document does not exist.
+**Response `200 OK`:** `DocumentReadResponse`
+**Response `404 Not Found`** if the document does not exist or belongs to another user.
 
 ---
 
-### `PUT /api/v1/documents/{id}`
-Update a document's tag list.
+### `GET /api/v1/documents/{id}/preview`
+Stream the original file inline (for in-browser display).
+
+**Response `200 OK`:** file stream with the document's original `Content-Type`
+**Response `404 Not Found`**
+
+---
+
+### `GET /api/v1/documents/{id}/download`
+Download the original stored file.
+
+**Response `200 OK`:** file stream with `Content-Disposition: attachment`
+**Response `404 Not Found`**
+
+---
+
+### `GET /api/v1/documents/{id}/extracted-text`
+Return the OCR-extracted or parsed plain text for a document.
+
+| Query param | Type | Default | Notes |
+|---|---|---|---|
+| `download` | bool | `false` | `true` returns `Content-Disposition: attachment` with a `.txt` filename |
+
+**Response `200 OK`:** `text/plain; charset=utf-8`
+**Response `404 Not Found`**
+
+---
+
+### `PUT /api/v1/documents/{id}/tags`
+Replace the tag set for a document.
 
 **Body:**
 ```json
 { "tags": ["finance", "q4"] }
 ```
 
-**Response `200 OK`:** `DocumentReadResponse`
+**Response `204 No Content`**
 
 ---
 
@@ -188,7 +199,9 @@ Permanently delete a document and its stored binary.
 ## Search
 
 ### `POST /api/v1/search/documents`
-Full-text keyword search across document titles and extracted text.
+Search documents by meaning (semantic) or keywords (full-text fallback).
+
+When Ollama is available, the query is embedded as a vector and results are ranked by cosine similarity using pgvector. When Ollama is unreachable, the search falls back to PostgreSQL full-text search (`tsvector`).
 
 **Body:**
 ```json
@@ -217,7 +230,7 @@ Full-text keyword search across document titles and extracted text.
 }
 ```
 
-Results are ordered by relevance score (descending). Title matches score higher than body-only matches. Snippets are at most 120 characters.
+Results are ordered by relevance score (descending). Snippets are at most 120 characters.
 
 ---
 
@@ -262,9 +275,132 @@ Possible `status` values: `Pending`, `InProgress`, `Completed`, `Failed`.
 ## Tags
 
 ### `GET /api/v1/tags`
-List all tag names in use across the corpus.
+List all tag names in use across the corpus (scoped to the current user's documents; admin sees all).
 
 **Response `200 OK`:** `string[]`
+
+---
+
+## Config
+
+### `GET /api/v1/config/upload`
+Return public upload limits for the client UI.
+
+**Response `200 OK`:**
+```json
+{ "maxFileSizeBytes": 52428800, "maxUploadCount": 10 }
+```
+
+No authentication required.
+
+---
+
+## Admin
+
+All admin endpoints require the `Admin` role.
+
+### `GET /api/v1/admin/documents`
+List all documents across all users (no ownership filtering).
+
+Supports the same query parameters as `GET /api/v1/documents`.
+
+**Response `200 OK`:** `PageResponse<DocumentListItemResponse>`
+
+---
+
+### `DELETE /api/v1/admin/documents/{id}`
+Delete any document regardless of owner. Action is audit-logged.
+
+**Response `204 No Content`**
+**Response `404 Not Found`**
+
+---
+
+### `POST /api/v1/admin/documents/{id}/reindex`
+Re-queue a document for text extraction and embedding. Allowed for any document not in `Pending` state (including `Imported`, `Indexed`, and `Failed`). Action is audit-logged.
+
+**Response `204 No Content`**
+**Response `404 Not Found`**
+
+---
+
+### `GET /api/v1/admin/documents/{id}/preview`
+Preview any document inline, regardless of owner.
+
+**Response `200 OK`:** file stream inline
+**Response `404 Not Found`**
+
+---
+
+### `GET /api/v1/admin/documents/{id}/download`
+Download any document, regardless of owner.
+
+**Response `200 OK`:** file stream with `Content-Disposition: attachment`
+**Response `404 Not Found`**
+
+---
+
+### `GET /api/v1/admin/users`
+List all registered users.
+
+**Response `200 OK`:**
+```json
+[
+  {
+    "id": "<uuid>",
+    "email": "user@example.com",
+    "displayName": "Alice",
+    "isGuest": false,
+    "createdAt": "2026-01-10T09:00:00Z",
+    "roles": ["User"]
+  }
+]
+```
+
+---
+
+### `DELETE /api/v1/admin/users/{id}`
+Permanently delete a user account. Action is audit-logged.
+
+**Response `204 No Content`**
+**Response `404 Not Found`**
+**Response `422 Unprocessable Entity`** if Identity deletion fails (e.g. last admin).
+
+---
+
+### `PUT /api/v1/admin/users/{id}/roles`
+Replace the role set for a user. Action is audit-logged.
+
+**Body:**
+```json
+{ "roles": ["Admin", "User"] }
+```
+
+**Response `204 No Content`**
+**Response `404 Not Found`**
+**Response `422 Unprocessable Entity`** if the role assignment fails.
+
+---
+
+### `GET /api/v1/admin/stats`
+Return aggregate statistics about users and documents.
+
+**Response `200 OK`:**
+```json
+{
+  "totalUsers": 42,
+  "guestUsers": 5,
+  "registeredUsers": 36,
+  "adminUsers": 1,
+  "totalDocuments": 280,
+  "documentsByStatus": {
+    "Pending": 2,
+    "Imported": 4,
+    "Indexed": 270,
+    "Failed": 4
+  }
+}
+```
 
 ---
 
@@ -275,40 +411,26 @@ Health endpoints do **not** appear in Swagger/OpenAPI — call them directly.
 ---
 
 ### `GET /health/live`
-Liveness probe. Returns `200 OK` as long as the process is running. No dependency checks are performed, making it safe to use as a Kubernetes `livenessProbe` or Docker HEALTHCHECK target.
+Liveness probe. Returns `200 OK` as long as the process is running. No dependency checks are performed.
 
 **Response `200 OK`:**
 ```json
-{
-  "status": "Healthy",
-  "totalDuration": "00:00:00.000",
-  "checks": {}
-}
+{ "status": "Healthy", "totalDuration": "00:00:00.000", "checks": {} }
 ```
 
 ---
 
 ### `GET /health/ready`
-Readiness probe. Runs all checks tagged `ready` — currently **database** and **storage**. Returns `503 Service Unavailable` if any check fails. Use this as a Kubernetes `readinessProbe` to stop traffic reaching the pod until all dependencies are up.
+Readiness probe. Runs all checks tagged `ready` — **database** and **storage**. Returns `503 Service Unavailable` if any check fails.
 
-**Response `200 OK`** (all dependencies healthy):
+**Response `200 OK`** (all healthy):
 ```json
 {
   "status": "Healthy",
   "totalDuration": "00:00:00.012",
   "checks": {
-    "database": {
-      "status": "Healthy",
-      "description": null,
-      "duration": "00:00:00.011",
-      "error": null
-    },
-    "storage": {
-      "status": "Healthy",
-      "description": null,
-      "duration": "00:00:00.001",
-      "error": null
-    }
+    "database": { "status": "Healthy", "duration": "00:00:00.011", "error": null },
+    "storage":  { "status": "Healthy", "duration": "00:00:00.001", "error": null }
   }
 }
 ```
@@ -319,28 +441,16 @@ Readiness probe. Runs all checks tagged `ready` — currently **database** and *
   "status": "Unhealthy",
   "totalDuration": "00:00:05.003",
   "checks": {
-    "database": {
-      "status": "Unhealthy",
-      "description": null,
-      "duration": "00:00:05.002",
-      "error": "Connection refused"
-    },
-    "storage": {
-      "status": "Healthy",
-      "description": null,
-      "duration": "00:00:00.001",
-      "error": null
-    }
+    "database": { "status": "Unhealthy", "duration": "00:00:05.002", "error": "Connection refused" },
+    "storage":  { "status": "Healthy",   "duration": "00:00:00.001", "error": null }
   }
 }
 ```
 
-#### Dependency checks
-
-| Check | Tag | What it does |
-|---|---|---|
-| `database` | `ready` | Calls `CanConnectAsync` on the EF Core `DocVaultDbContext` |
-| `storage` | `ready` | Writes a 1-byte probe file to `IFileStorage` and immediately deletes it |
+| Check | What it does |
+|---|---|
+| `database` | Calls `CanConnectAsync` on the EF Core `DocVaultDbContext` |
+| `storage` | Writes a 1-byte probe file to `IFileStorage` and immediately deletes it |
 
 ---
 
@@ -354,7 +464,7 @@ All `400 Bad Request` responses return `application/problem+json`:
   "title": "Validation failed",
   "errors": {
     "Title": ["Title must not be empty."],
-    "File": ["Only PDF, TXT, and DOCX files are accepted."]
+    "File": ["Only PDF, DOCX, TXT, Markdown, and image files are accepted."]
   },
   "traceId": "00-abc…"
 }

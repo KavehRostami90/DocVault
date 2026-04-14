@@ -7,7 +7,7 @@ public static class DocumentUploadTestData
 {
     public static readonly byte[] PdfBytes = "%PDF-1.4 test"u8.ToArray();
     public static readonly byte[] TxtBytes = "Hello, integration test."u8.ToArray();
-    public static readonly byte[] JpegBytes = [0xFF, 0xD8];
+    public static readonly byte[] AudioBytes = [0xFF, 0xFB]; // MP3 frame sync bytes
 
     public static class ValidFiles
     {
@@ -20,8 +20,8 @@ public static class DocumentUploadTestData
 
     public static class InvalidFiles
     {
-        public static (byte[] Bytes, string FileName, string ContentType) UnsupportedImage => 
-            (JpegBytes, "photo.jpg", "image/jpeg");
+        public static (byte[] Bytes, string FileName, string ContentType) UnsupportedAudio => 
+            (AudioBytes, "track.mp3", "audio/mpeg");
     }
 
     public static class ValidTitles

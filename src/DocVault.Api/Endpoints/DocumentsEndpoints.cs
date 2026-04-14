@@ -13,6 +13,7 @@ using DocVault.Application.UseCases.Documents.ImportDocument;
 using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
 using DocVault.Domain.Documents;
+using Microsoft.Net.Http.Headers;
 
 namespace DocVault.Api.Endpoints;
 
@@ -168,6 +169,40 @@ public static class DocumentsEndpoints
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Delete a document")
     .WithDescription("Deletes a document by identifier.");
+
+    group.MapGet("/{id:guid}/extracted-text", async (
+      Guid id,
+      bool download,
+      GetDocumentHandler handler,
+      ICurrentUser currentUser,
+      HttpContext httpContext,
+      CancellationToken ct) =>
+    {
+      var outcome = await handler.HandleAsync(
+        new GetDocumentQuery(new DocumentId(id), currentUser.UserId, currentUser.IsAdmin), ct);
+
+      if (!outcome.IsSuccess)
+        return Results.NotFound();
+
+      var doc = outcome.Value!;
+      var text = doc.Text ?? string.Empty;
+      var textFileName = Path.GetFileNameWithoutExtension(doc.FileName) + ".txt";
+      var dispositionType = download ? "attachment" : "inline";
+
+      httpContext.Response.Headers.Append(
+        HeaderNames.ContentDisposition,
+        new ContentDispositionHeaderValue(dispositionType)
+        {
+          FileName = textFileName,
+          FileNameStar = textFileName
+        }.ToString());
+
+      return Results.Content(text, "text/plain; charset=utf-8");
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Get extracted text")
+    .WithDescription("Returns the OCR-extracted or parsed text content of a document as plain text. Pass ?download=true to receive a .txt file attachment.");
 
     return routes;
   }

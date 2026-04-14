@@ -18,6 +18,7 @@ public class Document : AggregateRoot<DocumentId>
   public long Size { get; private set; }
   public FileHash Hash { get; private set; }
   public string Text { get; private set; }
+  public float[]? Embedding { get; private set; }
   public DocumentStatus Status { get; private set; }
   /// <summary>Set when the document enters the <see cref="DocumentStatus.Failed"/> state.</summary>
   public string? IndexingError { get; private set; }
@@ -52,6 +53,12 @@ public class Document : AggregateRoot<DocumentId>
     Touch();
   }
 
+  public void AttachEmbedding(float[] embedding)
+  {
+    Embedding = embedding;
+    Touch();
+  }
+
   public void MarkIndexed()
   {
     if (Status != DocumentStatus.Imported)
@@ -72,6 +79,21 @@ public class Document : AggregateRoot<DocumentId>
     Status = DocumentStatus.Imported;
     Touch();
     RaiseDomainEvent(new DocumentImported(Id));
+  }
+
+  /// <summary>
+  /// Resets the document to the <see cref="DocumentStatus.Imported"/> state so it can be
+  /// re-processed by the indexing pipeline. Valid from <c>Indexed</c>, <c>Failed</c>, or
+  /// <c>Imported</c> (document stuck from a previous incomplete run).
+  /// </summary>
+  public void PrepareForReindex()
+  {
+    if (Status is DocumentStatus.Pending)
+      throw new DomainException(DomainErrorCodes.InvalidStateTransition,
+        $"Cannot re-queue document from {Status} state — it has not been imported yet.");
+
+    Status = DocumentStatus.Imported;
+    Touch();
   }
 
   public void MarkFailed(string? error = null)

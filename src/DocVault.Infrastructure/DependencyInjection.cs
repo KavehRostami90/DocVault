@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Pgvector.EntityFrameworkCore;
 
 namespace DocVault.Infrastructure;
 
@@ -38,7 +39,8 @@ public static class DependencyInjection
     }
     else
     {
-      services.AddDbContextFactory<DocVaultDbContext>(options => options.UseNpgsql(connectionString));
+      services.AddDbContextFactory<DocVaultDbContext>(options =>
+        options.UseNpgsql(connectionString, o => o.UseVector()));
       services.AddScoped(sp =>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
 
@@ -79,6 +81,9 @@ public static class DependencyInjection
         new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
     }
 
+    services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.Section));
+    services.AddSingleton<IOcrEngine, CliTesseractOcrEngine>();
+    services.AddSingleton<ImageOcrExtractor>();
     services.AddSingleton<ITextExtractor, CompositeTextExtractor>();
 
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();

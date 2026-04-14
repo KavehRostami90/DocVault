@@ -13,7 +13,8 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 /// </summary>
 internal sealed class PostgresSearchStrategy : IDocumentSearchStrategy
 {
-  public bool CanHandle(DocVaultDbContext db) => db.Database.IsRelational();
+  // Handles relational keyword searches; vector search is handled by PgvectorSearchStrategy.
+  public bool CanHandle(DocVaultDbContext db, float[]? queryVector) => db.Database.IsRelational();
 
   public async Task<Page<SearchResultItem>> SearchAsync(
     DocVaultDbContext db,
@@ -21,6 +22,7 @@ internal sealed class PostgresSearchStrategy : IDocumentSearchStrategy
     int page,
     int size,
     Guid? ownerId,
+    float[]? queryVector,
     CancellationToken ct)
   {
     var tsQuery = string.Join(" | ", terms

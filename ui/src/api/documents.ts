@@ -1,4 +1,4 @@
-import { get, getBlob, put, del, upload } from './client'
+import { get, getBlob, getText, put, del, upload } from './client'
 import type { DocumentListItem, DocumentDetail, PageResponse } from '../types'
 
 export interface ListParams {
@@ -49,4 +49,12 @@ export function updateTags(id: string, tags: string[]): Promise<void> {
 
 export function deleteDocument(id: string): Promise<void> {
   return del(`/documents/${id}`)
+}
+
+export function getExtractedText(id: string): Promise<string> {
+  return getText(`/documents/${id}/extracted-text?download=false`)
+}
+
+export function getExtractedTextBlob(id: string): Promise<Blob> {
+  return getBlob(`/documents/${id}/extracted-text?download=true`)
 }

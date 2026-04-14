@@ -48,6 +48,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return r.json() as Promise<T>
 }
 
+export async function getText(path: string): Promise<string> {
+  const r = await send(path, { method: 'GET' })
+  if (r.status === 204) return ''
+  return r.text()
+}
+
 export async function get<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'GET' })
 }
