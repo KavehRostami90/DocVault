@@ -1,31 +1,160 @@
 # DocVault Production Readiness Plan
 
 ## Overview
-This document tracks the production readiness of DocVault, recording what is already implemented, what is a development stub, and the recommended path to a production-grade deployment.
+This document tracks what is fully implemented, what still uses a development default, and what to do before a production deployment.
 
 ---
 
 ## Current State
 
-### ✅ Production-Ready Components
+### ✅ Fully Implemented
 
-- **Clean Architecture** — strict layer separation, dependency inversion throughout
-- **Domain invariants** — all business rules enforced in `Document` and `ImportJob` aggregates; `DomainException` on violation
-- **Input validation** — FluentValidation with domain-level `ValidationConstants`; covers file size, content type, path traversal, tag limits, query length
-- **Error handling** — `GlobalExceptionHandler` translates exceptions to RFC 7807 `ProblemDetails`
-- **Structured logging** — Serilog 9 with source-generated `[LoggerMessage]` throughout; JSON output
-- **Correlation IDs** — `CorrelationIdMiddleware` injects `X-Correlation-Id` on every request
-- **Crash recovery** — `IndexingWorker` re-enqueues `Pending`/`InProgress` jobs on startup
-- **Domain events** — `DocumentImported` and `DocumentIndexed` raised and dispatched in-process
-- **EF Core migrations** — all schema changes tracked and applied via `dotnet ef database update`
-- **Integration tests** — 53 tests covering upload, search, validation, pagination, and scoring
-- **Unit tests** — 67 tests covering domain aggregates, handlers, embedding provider, and worker
+| Feature | Implementation |
+|---|---|
+| **Authentication** | ASP.NET Core Identity + self-hosted JWT; roles: `Admin`, `User`, `Guest`; refresh token rotation via httpOnly cookie |
+| **Authorization** | Policy-based; document ownership enforced in all handlers; `Admin` bypasses ownership checks |
+| **Guest accounts** | Ephemeral accounts with 24h JWT + refresh token expiry; `IsGuest` flag in DB |
+| **Document upload** | Multipart/form-data; up to 10 files; max 50 MB per file; duplicate rejection via SHA-256 hash |
+| **Text extraction** | PDF (PdfPig 0.1.9), DOCX (DocumentFormat.OpenXml 3.2.0), plain text (UTF-8), Markdown, images (Tesseract 5.2.0 OCR) |
+| **Semantic search** | pgvector `<=>` cosine distance, HNSW index (`vector_cosine_ops`), 768-dimension vectors |
+| **Full-text search fallback** | PostgreSQL `tsvector` / `ts_rank`; automatic fallback when embedding service is unavailable |
+| **Embedding provider** | `OpenAiEmbeddingProvider` — OpenAI-compatible API (works with Ollama `nomic-embed-text` locally) |
+| **Dev embedding stub** | `FakeEmbeddingProvider` — FNV-1a feature hashing, 128-dim; activated when `OpenAI:ApiKey` is empty |
+| **File storage** | `LocalFileStorage` (dev default) and `AzureBlobFileStorage` (production); swap via `Storage:Provider` config |
+| **Work queue** | `ChannelWorkQueue<T>` (in-memory, dev default) and `PostgresWorkQueue` (SKIP LOCKED, production); swap via DI registration |
+| **Background indexing** | `IndexingWorker` (`BackgroundService`); crash recovery on startup re-enqueues `Pending`/`InProgress` jobs |
+| **Health checks** | `/health/live` (liveness) and `/health/ready` (DB + storage readiness checks) |
+| **Rate limiting** | Fixed-window rate limiter on upload endpoints (10 requests / 1 minute) |
+| **Input validation** | FluentValidation on all requests; all limits sourced from `ValidationConstants` |
+| **Error handling** | `GlobalExceptionHandler` → RFC 7807 `ProblemDetails` |
+| **Structured logging** | Serilog 9 with `[LoggerMessage]` source-generated methods; JSON output |
+| **Correlation IDs** | `CorrelationIdMiddleware` injects `X-Correlation-Id` on every request |
+| **CORS** | Configurable origins via `Cors:AllowedOrigins`; `.AllowCredentials()` enabled automatically when origins are specific |
+| **API versioning** | `Asp.Versioning.Http`; current version `v1`; all routes under `/api/v1/` |
+| **API documentation** | Scalar UI (`/scalar/v1`), Swagger UI (`/swagger`), OpenAPI spec (`/openapi/v1.json`) |
+| **Admin dashboard** | Separate admin endpoints; `GET /admin/stats`, user management, document management + reindex |
+| **CI / CD** | GitHub Actions: `ci.yml` (unit + integration tests on PR/push to `master`), `deploy-test.yml` (auto), `deploy-production.yml` (on `v*.*.*` tags) |
+| **React frontend** | React 18 + TypeScript + Vite + Tailwind CSS; 7 pages including admin dashboard; silently refreshes JWT on 401 |
+| **Containerisation** | Multistage `Dockerfile` (port 8080); `docker-compose.yml` with pgvector/pgvector:pg16 |
+| **Azure IaC** | Bicep in `infra/main.bicep`; Azure Developer CLI (`azure.yaml`) |
+| **Integration tests** | 53 tests covering upload, search, validation, pagination, and scoring |
+| **Unit tests** | 67 tests covering domain aggregates, handlers, embedding provider, and worker |
 
-### ⚠️ Development Stubs (swap before going live)
+---
 
-| Component | Current implementation | Recommended production replacement |
+## ⚠️ Development Defaults to Change Before Going Live
+
+| Component | Dev default | Production replacement |
 |---|---|---|
-| Embeddings | `FakeEmbeddingProvider` — FNV-1a feature hashing, 128-dim L2-normalised | OpenAI `text-embedding-3-large`, Azure OpenAI, or local ONNX model |
+| **File storage** | `LocalFileStorage` — saves `{id}.bin` to `/app/storage` in the container | Set `Storage:Provider = AzureBlob` and configure `Storage:AzureBlob:ConnectionString` + `ContainerName` |
+| **Work queue** | `ChannelWorkQueue<T>` — in-memory; items lost on restart | Switch to `PostgresWorkQueue` in `DependencyInjection.cs`; already implemented |
+| **Embedding dimensions** | `OpenAI:Dimensions = 0` in `appsettings.json` and `docker-compose.yml` — activates `FakeEmbeddingProvider` (128-dim) | Set `OpenAI:Dimensions = 768` for `nomic-embed-text`; adjust if using a different model |
+| **Azure Bicep tier** | App Service Free (F1) in `infra/main.bicep` | Upgrade to at least B2 / P1v3 for production workloads |
+| **JWT signing key** | Dev secret in `appsettings.Development.json` | Set `Auth:JwtSigningKey` via Azure App Settings / env var; must be 32+ chars |
+| **Admin credentials** | Dev defaults in `appsettings.Development.json` | Set `Auth:AdminEmail` + `Auth:AdminPassword` via secrets; seeded once on first startup |
+
+---
+
+## Deployment Checklist
+
+### Infrastructure
+- [ ] Apply EF Core migrations to production database: `dotnet ef database update --project src/DocVault.Infrastructure --startup-project src/DocVault.Api`
+- [ ] Configure `ConnectionStrings:Database` via environment variable / Azure App Settings
+- [ ] Switch `Storage:Provider` to `AzureBlob` and configure the blob connection string + container
+- [ ] Switch work queue to `PostgresWorkQueue` in `src/DocVault.Infrastructure/DependencyInjection.cs`
+- [ ] Set `OpenAI:ApiKey`, `OpenAI:BaseUrl`, and `OpenAI:Dimensions` for the chosen embedding model
+- [ ] Set `OpenAI:Model` (e.g. `nomic-embed-text` for Ollama, or `text-embedding-3-small` for OpenAI)
+- [ ] Upgrade Azure App Service plan from Free F1 to at least B2 / P1v3
+
+### Security
+- [ ] Set `Auth:JwtSigningKey` to a 32+ character random secret
+- [ ] Set `Auth:AdminEmail` and `Auth:AdminPassword` to strong credentials
+- [ ] Set `Cors:AllowedOrigins` to the deployed frontend URL(s) — never leave as `*` in production
+- [ ] Enable TLS / configure reverse proxy (App Service handles this automatically)
+- [ ] Rotate all dev secrets; ensure nothing is committed to source control
+
+### Software Quality
+- [ ] Run `dotnet test` and confirm 0 failures before deploying
+- [ ] Run `docker build` and verify image builds cleanly
+- [ ] Smoke-test `/health/ready` after deployment
+
+### Observability
+- [ ] Configure a Serilog sink for cloud logging (Application Insights, Datadog, or Seq)
+- [ ] Set up alerting on `DocumentStatus = Failed` spike and `/health/ready` returning `503`
+
+---
+
+## Switching to PostgresWorkQueue
+
+```csharp
+// src/DocVault.Infrastructure/DependencyInjection.cs
+// Change:
+services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
+// To:
+services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
+```
+
+The `PostgresWorkQueue` table (`IndexingQueueEntries`) already exists in the EF schema.
+
+---
+
+## Switching to Azure Blob Storage
+
+Set these values in Azure App Settings or environment variables (never in source code):
+
+```
+Storage__Provider=AzureBlob
+Storage__AzureBlob__ConnectionString=DefaultEndpointsProtocol=https;AccountName=...
+Storage__AzureBlob__ContainerName=docvault-documents
+```
+
+The `AzureBlobFileStorage` implementation is already in `src/DocVault.Infrastructure/Storage/AzureBlobFileStorage.cs`.
+
+---
+
+## Configuring Embeddings for Production
+
+### Option A: Ollama (self-hosted, free)
+```json
+{
+  "OpenAI": {
+    "ApiKey": "ollama",
+    "BaseUrl": "http://<ollama-host>:11434/v1",
+    "Model": "nomic-embed-text",
+    "Dimensions": 768
+  }
+}
+```
+
+### Option B: OpenAI API
+```json
+{
+  "OpenAI": {
+    "ApiKey": "<your-api-key>",
+    "BaseUrl": "https://api.openai.com/v1",
+    "Model": "text-embedding-3-small",
+    "Dimensions": 1536
+  }
+}
+```
+
+> **Important:** The `Embedding` column in PostgreSQL is created as `vector(768)` by the existing migration. If you switch to a model with different dimensions (e.g. 1536), you must create a new migration that alters the column and rebuilds the HNSW index, then re-index all existing documents.
+
+---
+
+## Cost Estimates (Azure, Medium Deployment)
+
+| Service | Notes | Est. monthly |
+|---|---|---|
+| App Service (P1v3) | Minimum viable for production | $75–140 |
+| Azure Database for PostgreSQL Flexible (B2ms) | pgvector supported from v15+ | $50–120 |
+| Azure Blob Storage (Hot, 100 GB) | File binaries | $5–20 |
+| Ollama on a VM or ACI | Optional — only if self-hosting embeddings | $30–80 |
+| OpenAI Embeddings API | Alternative to Ollama | variable (per token) |
+| **Total** | | **~$160–360 / month** |
+
+Reduce costs by using the Free F1 App Service tier for low-traffic environments and storing files in Cool or Archive blob tiers.
+
 | File storage | `LocalFileStorage` — writes `{id}.bin` to `/app/storage` | Azure Blob Storage, AWS S3, or MinIO |
 | Work queue | `ChannelWorkQueue<T>` — in-memory, lost on restart | `PostgresWorkQueue` (already implemented) — enables multi-instance deployments |
 | Search index | `IndexStage` — virtual no-op base class | Subclass with PostgreSQL `tsvector`/`tsquery`, Azure AI Search, or Elasticsearch |
