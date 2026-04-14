@@ -71,7 +71,7 @@ public sealed class DocumentUploadValidationTests : BaseIntegrationTest
     {
         // Act
         var response = await _uploadHelpers.UploadDocumentAsync(
-            DocumentUploadTestData.InvalidFiles.UnsupportedImage,
+            DocumentUploadTestData.InvalidFiles.UnsupportedAudio,
             DocumentUploadTestData.ValidTitles.QuarterlyReport);
 
         // Assert

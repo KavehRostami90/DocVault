@@ -11,7 +11,10 @@ public sealed class IngestionPipeline : IIngestionPipeline
   private readonly IndexStage _index;
   private readonly PipelineDelegates _hooks;
 
-  public IngestionPipeline(FileReadStage fileRead, TextExtractStage textExtract, EmbeddingStage embedding, IndexStage index, PipelineDelegates hooks)
+  public IngestionPipeline(FileReadStage fileRead,
+    TextExtractStage textExtract,
+    EmbeddingStage embedding,
+    IndexStage index, PipelineDelegates hooks)
   {
     _fileRead = fileRead;
     _textExtract = textExtract;

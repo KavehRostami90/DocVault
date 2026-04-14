@@ -79,6 +79,9 @@ public static class DependencyInjection
         new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
     }
 
+    services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.Section));
+    services.AddSingleton<IOcrEngine, CliTesseractOcrEngine>();
+    services.AddSingleton<ImageOcrExtractor>();
     services.AddSingleton<ITextExtractor, CompositeTextExtractor>();
 
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();

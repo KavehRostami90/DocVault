@@ -95,8 +95,8 @@ public sealed class DocumentUploadTests : BaseIntegrationTest
   public async Task Post_UnsupportedContentType_Returns400WithError()
   {
     var response = await HttpClient.PostAsync("/api/v1/documents", BuildForm(
-      file: ([0xFF, 0xD8], "photo.jpg", "image/jpeg"),
-      title: "A photo"));
+      file: ([0xFF, 0xFB], "track.mp3", "audio/mpeg"),
+      title: "A song"));
 
     Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     var body = await ParseJsonAsync(response);

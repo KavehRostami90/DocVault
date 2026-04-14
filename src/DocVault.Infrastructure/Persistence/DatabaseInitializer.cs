@@ -29,6 +29,8 @@ public class DatabaseInitializer : IHostedService
     using var scope = _serviceProvider.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<DocVaultDbContext>();
 
+    await WaitForDatabaseAsync(dbContext, cancellationToken);
+
     try
     {
       if (dbContext.Database.IsRelational())
@@ -55,6 +57,39 @@ public class DatabaseInitializer : IHostedService
   }
 
   public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+  /// <summary>
+  /// Polls the database until a connection can be established, using exponential backoff.
+  /// Gives up after ~60 seconds total wait time.
+  /// </summary>
+  private async Task WaitForDatabaseAsync(DocVaultDbContext dbContext, CancellationToken cancellationToken)
+  {
+    if (!dbContext.Database.IsRelational())
+      return;
+
+    const int maxAttempts = 10;
+    var delay = TimeSpan.FromSeconds(2);
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    {
+      try
+      {
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        await dbContext.Database.CloseConnectionAsync();
+        _logger.LogInformation("Database connection established on attempt {Attempt}.", attempt);
+        return;
+      }
+      catch (Exception ex) when (attempt < maxAttempts)
+      {
+        _logger.LogWarning(
+          "Database not ready (attempt {Attempt}/{Max}): {Message}. Retrying in {Delay}s…",
+          attempt, maxAttempts, ex.Message, delay.TotalSeconds);
+
+        await Task.Delay(delay, cancellationToken);
+        delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
+      }
+    }
+  }
 
   /// <summary>
   /// Runs <c>MigrateAsync</c> and, if a duplicate-table error is raised (meaning the schema

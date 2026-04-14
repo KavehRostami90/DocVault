@@ -1,3 +1,4 @@
+using System.Globalization;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Composition;
 using DocVault.Domain.Common;
@@ -70,7 +71,7 @@ public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentC
   private static string FormatFileSize(long bytes)
   {
     if (bytes < 1024) return $"{bytes} bytes";
-    if (bytes < 1024 * 1024) return $"{bytes / 1024d:F1} KB";
-    return $"{bytes / 1024d / 1024d:F1} MB";
+    if (bytes < 1024 * 1024) return $"{(bytes / 1024d).ToString("F1", CultureInfo.InvariantCulture)} KB";
+    return $"{(bytes / 1024d / 1024d).ToString("F1", CultureInfo.InvariantCulture)} MB";
   }
 }
