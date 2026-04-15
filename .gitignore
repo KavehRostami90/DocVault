@@ -43,6 +43,8 @@ docker-compose.override.yml
 # Azurite local storage (Azure Storage emulator)
 __blobstorage__/
 __queuestorage__/
+__azurite_db_table__.json
+AzuriteConfig
 
 # UI — dependencies, build output, and TS incremental build cache
 ui/node_modules/

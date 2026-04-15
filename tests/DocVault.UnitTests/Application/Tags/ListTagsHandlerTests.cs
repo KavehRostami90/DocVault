@@ -15,14 +15,14 @@ public class ListTagsHandlerTests
         var tags = new[] { TagNamed("alpha"), TagNamed("beta") };
 
         var repository = new Mock<ITagRepository>();
-        repository.Setup(r => r.ListAsync(cancellationToken)).ReturnsAsync(tags);
+        repository.Setup(r => r.ListAsync(null, cancellationToken)).ReturnsAsync(tags);
 
         var handler = new ListTagsHandler(repository.Object);
 
-        var result = await handler.HandleAsync(cancellationToken);
+        var result = await handler.HandleAsync(null, cancellationToken);
 
         Assert.Equal(new[] { "alpha", "beta" }, result);
-        repository.Verify(r => r.ListAsync(cancellationToken), Times.Once);
+        repository.Verify(r => r.ListAsync(null, cancellationToken), Times.Once);
         repository.VerifyNoOtherCalls();
     }
 
@@ -31,12 +31,12 @@ public class ListTagsHandlerTests
     {
         var cancellationToken = CancellationToken.None;
         var repository = new Mock<ITagRepository>();
-        repository.Setup(r => r.ListAsync(cancellationToken)).ThrowsAsync(new InvalidOperationException("boom"));
+        repository.Setup(r => r.ListAsync(null, cancellationToken)).ThrowsAsync(new InvalidOperationException("boom"));
 
         var handler = new ListTagsHandler(repository.Object);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(cancellationToken));
-        repository.Verify(r => r.ListAsync(cancellationToken), Times.Once);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(null, cancellationToken));
+        repository.Verify(r => r.ListAsync(null, cancellationToken), Times.Once);
         repository.VerifyNoOtherCalls();
     }
 
@@ -45,14 +45,33 @@ public class ListTagsHandlerTests
     {
         var cancellationToken = CancellationToken.None;
         var repository = new Mock<ITagRepository>();
-        repository.Setup(r => r.ListAsync(cancellationToken)).ReturnsAsync(Array.Empty<Tag>());
+        repository.Setup(r => r.ListAsync(null, cancellationToken)).ReturnsAsync(Array.Empty<Tag>());
 
         var handler = new ListTagsHandler(repository.Object);
 
-        var result = await handler.HandleAsync(cancellationToken);
+        var result = await handler.HandleAsync(null, cancellationToken);
 
         Assert.Empty(result);
-        repository.Verify(r => r.ListAsync(cancellationToken), Times.Once);
+        repository.Verify(r => r.ListAsync(null, cancellationToken), Times.Once);
+        repository.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Filters_tags_by_owner_when_owner_id_provided()
+    {
+        var ownerId = Guid.NewGuid();
+        var cancellationToken = CancellationToken.None;
+        var tags = new[] { TagNamed("finance") };
+
+        var repository = new Mock<ITagRepository>();
+        repository.Setup(r => r.ListAsync(ownerId, cancellationToken)).ReturnsAsync(tags);
+
+        var handler = new ListTagsHandler(repository.Object);
+
+        var result = await handler.HandleAsync(ownerId, cancellationToken);
+
+        Assert.Equal(new[] { "finance" }, result);
+        repository.Verify(r => r.ListAsync(ownerId, cancellationToken), Times.Once);
         repository.VerifyNoOtherCalls();
     }
 

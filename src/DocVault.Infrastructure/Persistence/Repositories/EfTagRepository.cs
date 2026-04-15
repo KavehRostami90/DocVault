@@ -50,15 +50,26 @@ public class EfTagRepository : ITagRepository
   }
 
   /// <summary>
-  /// Lists all tags ordered by name.
+  /// Lists tags ordered by name.
+  /// When <paramref name="ownerId"/> is provided, only tags used in that user's documents are returned.
   /// </summary>
+  /// <param name="ownerId">Optional owner filter. Pass <c>null</c> to return all tags (admin view).</param>
   /// <param name="cancellationToken">Cancellation token.</param>
-  public async Task<IReadOnlyCollection<Tag>> ListAsync(CancellationToken cancellationToken = default)
+  public async Task<IReadOnlyCollection<Tag>> ListAsync(Guid? ownerId = null, CancellationToken cancellationToken = default)
   {
-    var list = await _db.Tags
-      .AsNoTracking()
-      .OrderBy(t => t.Name)
-      .ToListAsync(cancellationToken);
+    var query = _db.Tags.AsNoTracking();
+
+    if (ownerId.HasValue)
+    {
+      var ownerTagIds = _db.Documents
+        .Where(d => d.OwnerId == ownerId)
+        .SelectMany(d => d.Tags)
+        .Select(t => t.Id);
+
+      query = query.Where(t => ownerTagIds.Contains(t.Id));
+    }
+
+    var list = await query.OrderBy(t => t.Name).ToListAsync(cancellationToken);
     return list;
   }
 }

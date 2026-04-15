@@ -16,13 +16,14 @@ public sealed class ListTagsHandler
   }
 
   /// <summary>
-  /// Lists all tag names ordered by name.
+  /// Lists tag names for the given owner, or all tags when <paramref name="ownerId"/> is <c>null</c> (admin).
   /// </summary>
+  /// <param name="ownerId">Owner to filter by, or <c>null</c> for all tags.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
   /// <returns>Collection of tag names.</returns>
-  public async Task<IReadOnlyCollection<string>> HandleAsync(CancellationToken cancellationToken = default)
+  public async Task<IReadOnlyCollection<string>> HandleAsync(Guid? ownerId, CancellationToken cancellationToken = default)
   {
-    var items = await _tags.ListAsync(cancellationToken);
+    var items = await _tags.ListAsync(ownerId, cancellationToken);
     return items.Select(t => t.Name).ToArray();
   }
 }
