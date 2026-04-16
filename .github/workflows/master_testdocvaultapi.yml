@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy ASP.Net Core app to Azure Web App - TestDocvaultApi
+name: Build and deploy ASP.Net Core app to Azure Web App - TestDocVaultApi
 
 on:
   push:
@@ -51,15 +51,15 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_090A6E6B2D5A478ABB0829B86C455415 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_71B1BBC5B6BA4D0B96DC82D5A22D5172 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_F288BC652F424E9091FD930DCA3EC6CC }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_1633D3A6D8BA4D50A649A43356C28376 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_69A9CFF890934EF2ABA46015D4B9E0A9 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_A72104F060C94DA488533ABB05FB0507 }}
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'TestDocvaultApi'
+          app-name: 'TestDocVaultApi'
           slot-name: 'Production'
           package: .
           
