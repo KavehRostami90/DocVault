@@ -19,6 +19,7 @@ coverage/
 
 # Serilog rolling logs
 **/Logs/
+**/logs/
 *.log
 *.clef
 

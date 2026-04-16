@@ -42,6 +42,7 @@ services:
       - "8081:8080"
     volumes:
       - app-storage:/app/storage
+      - ${DOCVAULT_LOG_PATH:-}:/app/Logs 
     mem_limit: 512m
     cpus: 0.75
 
