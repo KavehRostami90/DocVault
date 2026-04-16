@@ -103,6 +103,75 @@ docker compose down -v       # stop containers and delete all data (including DB
 
 > **Note:** If you are upgrading from a version without pgvector, run `docker compose down -v` before starting again so the database is recreated with the vector extension and migration applied.
 
+## Local Development with Azurite (Azure Blob Storage emulator)
+
+By default the API stores uploaded files on local disk (`LocalFileStorage`). You can swap to **Azurite** — a free, open-source emulator for Azure Blob Storage — to develop and test blob storage locally without needing an Azure account.
+
+**Azurite is 100% free.** It is MIT-licensed and maintained by Microsoft.  
+GitHub: <https://github.com/Azure/Azurite>
+
+### How it works
+
+`DependencyInjection.cs` checks `ConnectionStrings:AzureBlob` at startup:
+
+- **empty / missing** → `LocalFileStorage` (files on disk, default)
+- **set** → `AzureBlobFileStorage` (Azure SDK `BlobContainerClient`)
+
+Azurite is included in `docker-compose.yml` as an **optional profile** — it only starts when you explicitly activate it.
+
+### Enable via Docker Compose (recommended)
+
+1. Copy `.env.example` to `.env` (if you haven't already)
+2. Uncomment `DOCVAULT_BLOB_CONN_STR` in `.env`
+3. Start the stack with the `azurite` profile:
+
+```bash
+docker compose --profile azurite up --build
+```
+
+`docker compose up` (without the profile) starts only `api`, `db`, and `ui` and uses local-disk storage. No override file is needed.
+
+| What | Detail |
+|---|---|
+| `azurite` service | `mcr.microsoft.com/azure-storage/azurite` on ports 10000–10002 |
+| `DOCVAULT_BLOB_CONN_STR` | Set in `.env` — picked up by the `api` container automatically |
+| `azurite-data` volume | Blob data persists across restarts |
+
+### Enable without Docker (running the API locally)
+
+Install Azurite globally and start it:
+
+```bash
+npm install -g azurite
+azurite --location ./AzuriteData --loose
+```
+
+Then add to `src/DocVault.Api/appsettings.Development.json` (gitignored):
+
+```json
+{
+  "ConnectionStrings": {
+    "AzureBlob": "UseDevelopmentStorage=true"
+  },
+  "Storage": {
+    "ContainerName": "docvault"
+  }
+}
+```
+
+`UseDevelopmentStorage=true` is the Azurite shorthand for `127.0.0.1:10000` with the well-known developer account credentials.
+
+### Azurite data files
+
+The following files/folders produced by Azurite are gitignored:
+
+```
+__blobstorage__/
+__queuestorage__/
+__azurite_db_table__.json
+AzuriteConfig/
+```
+
 ## Local Development (without Docker)
 
 ### Prerequisites
@@ -262,7 +331,7 @@ The embedding call in `SearchDocumentsHandler` is wrapped in a try/catch — if 
 |---|---|---|
 | Embeddings | `OpenAiEmbeddingProvider` — Ollama `nomic-embed-text` (768-dim) | Any OpenAI-compatible API; set `ApiKey`, `BaseUrl`, `Model`, `Dimensions` |
 | Text extraction | `FakeEmbeddingProvider` (128-dim FNV-1a hash) | Used in tests / when Ollama unreachable |
-| File storage | `LocalFileStorage` — `{id}.bin` in `/app/storage` | `AzureBlobFileStorage` |
+| File storage | `LocalFileStorage` — `{id}.bin` in `/app/storage` | `AzureBlobFileStorage` — set `ConnectionStrings:AzureBlob`; use Azurite locally (see above) |
 | Work queue | `ChannelWorkQueue<T>` — in-memory | `PostgresWorkQueue` — SKIP LOCKED (multi-instance) |
 | Event dispatch | `InProcessDomainEventDispatcher` | RabbitMQ / Azure Event Hub |
 

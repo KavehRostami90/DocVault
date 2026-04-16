@@ -10,6 +10,9 @@ public sealed class AzureBlobFileStorage : IFileStorage
 {
   private readonly BlobContainerClient _container;
 
+  // Container is created once on first write; subsequent writes skip the call.
+  private volatile bool _containerReady;
+
   public AzureBlobFileStorage(string connectionString, string containerName)
   {
     var serviceClient = new BlobServiceClient(connectionString);
@@ -34,7 +37,11 @@ public sealed class AzureBlobFileStorage : IFileStorage
 
   public async Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default)
   {
-    await _container.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+    if (!_containerReady)
+    {
+      await _container.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+      _containerReady = true;
+    }
     var blob = _container.GetBlobClient(path);
     await blob.UploadAsync(content, overwrite: true, cancellationToken: cancellationToken);
   }

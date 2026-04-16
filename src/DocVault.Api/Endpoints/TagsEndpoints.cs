@@ -1,6 +1,6 @@
 using DocVault.Api.Contracts.Tags;
+using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.UseCases.Tags.ListTags;
-using DocVault.Application.Abstractions.Persistence;
 
 namespace DocVault.Api.Endpoints;
 
@@ -13,9 +13,10 @@ public static class TagsEndpoints
   {
     var group = routes.MapGroup("/tags")
       .RequireAuthorization();
-    group.MapGet("/", async (ListTagsHandler handler, CancellationToken ct) =>
+    group.MapGet("/", async (ListTagsHandler handler, ICurrentUser currentUser, CancellationToken ct) =>
       {
-        var names = await handler.HandleAsync(ct);
+        var ownerId = currentUser.IsAdmin ? null : currentUser.UserId;
+        var names = await handler.HandleAsync(ownerId, ct);
         var dto = names.Select(n => new TagListItemResponse(n)).ToArray();
         return Results.Ok(dto);
       })

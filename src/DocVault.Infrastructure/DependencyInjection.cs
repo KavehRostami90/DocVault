@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Pgvector.EntityFrameworkCore;
 
 namespace DocVault.Infrastructure;
@@ -72,13 +73,26 @@ public static class DependencyInjection
     var azureBlobContainer = configuration["Storage:ContainerName"] ?? "docvault";
     if (!string.IsNullOrWhiteSpace(azureBlobConnStr))
     {
-      services.AddSingleton<IFileStorage>(_ =>
-        new AzureBlobFileStorage(azureBlobConnStr, azureBlobContainer));
+      services.AddSingleton<IFileStorage>(sp =>
+      {
+        sp.GetRequiredService<ILoggerFactory>()
+          .CreateLogger("DocVault.Infrastructure")
+          .LogInformation("File storage: AzureBlobFileStorage (endpoint={BlobEndpoint}, container={Container})",
+            azureBlobConnStr.Split(';').FirstOrDefault(p => p.StartsWith("BlobEndpoint", StringComparison.OrdinalIgnoreCase)) ?? "default",
+            azureBlobContainer);
+        return new AzureBlobFileStorage(azureBlobConnStr, azureBlobContainer);
+      });
     }
     else
     {
-      services.AddSingleton<IFileStorage>(_ =>
-        new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage")));
+      services.AddSingleton<IFileStorage>(sp =>
+      {
+        sp.GetRequiredService<ILoggerFactory>()
+          .CreateLogger("DocVault.Infrastructure")
+          .LogInformation("File storage: LocalFileStorage (path={StoragePath})",
+            Path.Combine(AppContext.BaseDirectory, "storage"));
+        return new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage"));
+      });
     }
 
     services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.Section));

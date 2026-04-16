@@ -11,8 +11,8 @@ public interface ITagRepository
   Task<Tag?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
   /// <summary>Gets tags matching the provided names.</summary>
   Task<IReadOnlyCollection<Tag>> GetByNamesAsync(IEnumerable<string> names, CancellationToken cancellationToken = default);
-  /// <summary>Lists all tags ordered by name.</summary>
-  Task<IReadOnlyCollection<Tag>> ListAsync(CancellationToken cancellationToken = default);
+  /// <summary>Lists all tags ordered by name. When <paramref name="ownerId"/> is provided, only tags used in that user's documents are returned.</summary>
+  Task<IReadOnlyCollection<Tag>> ListAsync(Guid? ownerId = null, CancellationToken cancellationToken = default);
   /// <summary>Adds a new tag.</summary>
   Task AddAsync(Tag tag, CancellationToken cancellationToken = default);
 }

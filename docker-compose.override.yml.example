@@ -1,0 +1,55 @@
+# docker-compose.override.yml.example
+#
+# Copy this file to docker-compose.override.yml (gitignored) and uncomment the
+# sections you need. This file is for local personal tweaks that should not be
+# committed — port changes, GPU passthrough, extra environment variables, etc.
+#
+# ─── Quick-start combos ──────────────────────────────────────────────────────
+#
+#   Default (local disk + host Ollama):
+#     docker compose up
+#
+#   With Azurite blob storage:
+#     docker compose --profile azurite up
+#     (set DOCVAULT_BLOB_CONN_STR in .env — see .env.example)
+#
+#   With containerised Ollama (CPU):
+#     docker compose --profile ollama run --rm ollama-init   # once, to pull model
+#     docker compose --profile ollama up
+#
+#   Full stack (Azurite + Ollama):
+#     docker compose --profile azurite --profile ollama run --rm ollama-init
+#     docker compose --profile azurite --profile ollama up
+#
+# ─── GPU passthrough for Ollama (NVIDIA) ─────────────────────────────────────
+#
+# Requires: NVIDIA Container Toolkit installed on the host.
+# Docs: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+#
+# Uncomment the block below, then start with --profile ollama:
+#
+# services:
+#   ollama:
+#     deploy:
+#       resources:
+#         reservations:
+#           devices:
+#             - driver: nvidia
+#               count: all
+#               capabilities: [gpu]
+#
+# ─── GPU passthrough for Ollama (AMD / ROCm) ─────────────────────────────────
+#
+# services:
+#   ollama:
+#     image: ollama/ollama:rocm
+#     devices:
+#       - /dev/kfd
+#       - /dev/dri
+#
+# ─── Other common local tweaks ───────────────────────────────────────────────
+#
+# services:
+#   api:
+#     environment:
+#       SomeExtra__Setting: value
