@@ -23,6 +23,11 @@ internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
     float[]? queryVector,
     CancellationToken ct)
   {
+    // InMemory provider cannot do vector search; if no text terms were provided there is
+    // nothing to match against so return an empty page instead of crashing in BuildOrFilter.
+    if (terms.Length == 0)
+      return new Page<SearchResultItem>([], page, size, 0);
+
     IQueryable<Document> query = db.Documents.Include(d => d.Tags);
     query = query.Where(BuildOrFilter(terms));
 
