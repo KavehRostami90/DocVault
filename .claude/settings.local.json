@@ -11,7 +11,8 @@
       "WebFetch(domain:www.nuget.org)",
       "WebFetch(domain:www.npgsql.org)",
       "Bash(xargs wc:*)",
-      "Bash(ls *.md docs/)"
+      "Bash(ls *.md docs/)",
+      "Bash(gh pr *)"
     ]
   }
 }

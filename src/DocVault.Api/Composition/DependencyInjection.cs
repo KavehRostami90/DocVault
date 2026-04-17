@@ -70,6 +70,28 @@ public static class DependencyInjection
             QueueLimit           = 0,
           }));
 
+      options.AddPolicy(RateLimitPolicies.Search, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+          partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+          factory: _ => new FixedWindowRateLimiterOptions
+          {
+            PermitLimit          = 60,
+            Window               = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit           = 0,
+          }));
+
+      options.AddPolicy(RateLimitPolicies.Qa, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+          partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+          factory: _ => new FixedWindowRateLimiterOptions
+          {
+            PermitLimit          = 20,
+            Window               = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit           = 0,
+          }));
+
       options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     });
 

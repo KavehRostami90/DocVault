@@ -34,17 +34,21 @@ internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
     if (ownerId.HasValue)
       query = query.Where(d => d.OwnerId == ownerId);
 
-    var total = await query.LongCountAsync(ct);
-    var docs  = await query.ToListAsync(ct);
+    // Load all matching docs to score them in-memory, then paginate.
+    // The extra LongCountAsync round-trip is unnecessary since we already have the full set.
+    var docs = await query.ToListAsync(ct);
 
     var items = docs
       .Select(d => new SearchResultItem(d, DocumentScorer.Compute(d, terms)))
       .OrderByDescending(i => i.Score)
+      .ToList();
+
+    var paged = items
       .Skip((page - 1) * size)
       .Take(size)
       .ToList();
 
-    return new Page<SearchResultItem>(items, page, size, total);
+    return new Page<SearchResultItem>(paged, page, size, (long)items.Count);
   }
 
   // Builds: d => (d.Title.Contains(t1) || d.Text.Contains(t1)) || ...

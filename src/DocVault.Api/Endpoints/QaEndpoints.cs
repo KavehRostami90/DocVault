@@ -1,4 +1,5 @@
 using DocVault.Api.Contracts.Qa;
+using DocVault.Api.Middleware;
 using DocVault.Api.Validation;
 using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.UseCases.Qa;
@@ -41,6 +42,7 @@ public static class QaEndpoints
 
       return Results.Ok(response);
     })
+    .RequireRateLimiting(RateLimitPolicies.Qa)
     .AddEndpointFilterFactory(ValidationFilter.Create<AskQuestionRequest>())
     .Produces<AskQuestionResponse>(StatusCodes.Status200OK)
     .WithSummary("Ask a question over documents")

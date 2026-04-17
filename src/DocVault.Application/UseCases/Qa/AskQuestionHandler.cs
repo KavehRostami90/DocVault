@@ -39,8 +39,8 @@ public sealed partial class AskQuestionHandler
       return Result<AskQuestionResult>.Failure(search.Error ?? "Failed to retrieve context documents.");
 
     var candidates = query.DocumentId.HasValue
-      ? search.Value.Items.Where(i => i.Document.Id.Value == query.DocumentId.Value).ToList()
-      : search.Value.Items.ToList();
+      ? search.Value.Page.Items.Where(i => i.Document.Id.Value == query.DocumentId.Value).ToList()
+      : search.Value.Page.Items.ToList();
 
     var contexts = BuildContexts(candidates, query.Question, query.MaxContexts);
     if (contexts.Count == 0)
