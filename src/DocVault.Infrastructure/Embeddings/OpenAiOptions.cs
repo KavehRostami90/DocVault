@@ -1,3 +1,5 @@
+using System;
+
 namespace DocVault.Infrastructure.Embeddings;
 
 /// <summary>
@@ -37,7 +39,14 @@ public sealed class OpenAiOptions
   public int Dimensions { get; init; } = 0;
 
   /// <summary>
-  /// Gets a value indicating whether the API key is configured and not empty.
+  /// Gets a value indicating whether an OpenAI-compatible endpoint is configured.
+  /// Supports either:
+  /// <list type="bullet">
+  ///   <item><description>Hosted OpenAI/Azure OpenAI with API key.</description></item>
+  ///   <item><description>Local OpenAI-compatible endpoints (for example Ollama) via a non-default BaseUrl.</description></item>
+  /// </list>
   /// </summary>
-  public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
+  public bool IsConfigured =>
+    !string.IsNullOrWhiteSpace(ApiKey) ||
+    !string.Equals(BaseUrl?.TrimEnd('/'), "https://api.openai.com/v1", StringComparison.OrdinalIgnoreCase);
 }

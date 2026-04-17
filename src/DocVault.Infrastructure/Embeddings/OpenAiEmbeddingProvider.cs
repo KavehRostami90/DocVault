@@ -23,8 +23,9 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
     _logger  = logger;
 
     _http.BaseAddress = new Uri(_options.BaseUrl.TrimEnd('/') + "/");
-    _http.DefaultRequestHeaders.Authorization =
-      new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+    if (!string.IsNullOrWhiteSpace(_options.ApiKey))
+      _http.DefaultRequestHeaders.Authorization =
+        new AuthenticationHeaderValue("Bearer", _options.ApiKey);
 
     LogProviderReady(
       _logger,
