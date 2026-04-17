@@ -48,5 +48,25 @@ public sealed class OpenAiOptions
   /// </summary>
   public bool IsConfigured =>
     !string.IsNullOrWhiteSpace(ApiKey) ||
-    !string.Equals(BaseUrl?.TrimEnd('/'), "https://api.openai.com/v1", StringComparison.OrdinalIgnoreCase);
+    HasConfiguredCustomBaseUrl();
+
+  private bool HasConfiguredCustomBaseUrl()
+  {
+    if (string.IsNullOrWhiteSpace(BaseUrl))
+    {
+      return false;
+    }
+
+    if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var baseUri))
+    {
+      return false;
+    }
+
+    const string defaultBaseUrl = "https://api.openai.com/v1";
+
+    return !string.Equals(
+      baseUri.ToString().TrimEnd('/'),
+      defaultBaseUrl,
+      StringComparison.OrdinalIgnoreCase);
+  }
 }
