@@ -34,6 +34,19 @@ export interface SearchResultItem {
   score: number
 }
 
+export interface QaCitation {
+  documentId: string
+  title: string
+  excerpt: string
+  score: number
+}
+
+export interface QaResponse {
+  answer: string
+  answeredByModel: boolean
+  citations: QaCitation[]
+}
+
 export interface ImportStatus {
   id: string
   fileName: string

@@ -84,6 +84,7 @@ try
   v1.MapAuthEndpoints();
   v1.MapDocumentsEndpoints();
   v1.MapSearchEndpoints();
+  v1.MapQaEndpoints();
   v1.MapTagsEndpoints();
   v1.MapImportsEndpoints();
   v1.MapAdminEndpoints();
