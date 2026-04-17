@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using DocVault.Application.Abstractions.Qa;
 using DocVault.Application.Common.Results;
 using DocVault.Application.UseCases.Search;
+using Microsoft.Extensions.Logging;
 
 namespace DocVault.Application.UseCases.Qa;
 
@@ -12,15 +13,20 @@ namespace DocVault.Application.UseCases.Qa;
 /// 3) call QA generator,
 /// 4) return answer + citations.
 /// </summary>
-public sealed class AskQuestionHandler
+public sealed partial class AskQuestionHandler
 {
   private readonly SearchDocumentsHandler _search;
   private readonly IQuestionAnsweringService _qa;
+  private readonly ILogger<AskQuestionHandler> _logger;
 
-  public AskQuestionHandler(SearchDocumentsHandler search, IQuestionAnsweringService qa)
+  public AskQuestionHandler(
+    SearchDocumentsHandler search,
+    IQuestionAnsweringService qa,
+    ILogger<AskQuestionHandler> logger)
   {
     _search = search;
     _qa = qa;
+    _logger = logger;
   }
 
   public async Task<Result<AskQuestionResult>> HandleAsync(AskQuestionQuery query, CancellationToken cancellationToken = default)
@@ -52,7 +58,8 @@ public sealed class AskQuestionHandler
     }
     catch (Exception ex)
     {
-      return Result<AskQuestionResult>.Failure($"QA service unavailable: {ex.Message}");
+      LogQaServiceError(_logger, ex);
+      return Result<AskQuestionResult>.Failure("QA service unavailable. Please try again later.");
     }
 
     var citations = contexts
@@ -120,4 +127,8 @@ public sealed class AskQuestionHandler
 
   internal static string FallbackAnswer(QaContextChunk best)
     => $"Possible answer from '{best.DocumentTitle}': {best.Text[..Math.Min(220, best.Text.Length)]}";
+
+  [LoggerMessage(Level = LogLevel.Error,
+    Message = "QA service threw an unexpected exception.")]
+  static partial void LogQaServiceError(ILogger logger, Exception ex);
 }
