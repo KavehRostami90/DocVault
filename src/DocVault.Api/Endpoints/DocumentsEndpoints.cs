@@ -6,7 +6,6 @@ using DocVault.Api.Middleware;
 using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Abstractions.Realtime;
 using DocVault.Application.Abstractions.Storage;
-using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
 using DocVault.Application.UseCases.Documents.GetDocumentFile;
@@ -181,7 +180,7 @@ public static class DocumentsEndpoints
       CancellationToken ct) =>
     {
       // Subscribe before querying to avoid missing events due to race conditions.
-      var channel = broadcaster.Subscribe(id);
+      var reader = broadcaster.Subscribe(id);
       try
       {
         var outcome = await handler.HandleAsync(
@@ -201,21 +200,21 @@ public static class DocumentsEndpoints
         // Already in a terminal state — emit once and close.
         if (doc.Status is DocumentStatus.Indexed or DocumentStatus.Failed)
         {
-          await WriteSseEventAsync(response, doc.Id.Value, doc.Status.ToString(), doc.IndexingError, ct);
+          await WriteSseEventAsync(response, doc.Id.Value, doc.Status, doc.IndexingError, ct);
           return;
         }
 
-        await foreach (var evt in channel.Reader.ReadAllAsync(ct))
+        await foreach (var evt in reader.ReadAllAsync(ct))
         {
           await WriteSseEventAsync(response, evt.DocumentId, evt.Status, evt.Error, ct);
-          if (evt.Status is "Indexed" or "Failed") break;
+          if (evt.Status is DocumentStatus.Indexed or DocumentStatus.Failed) break;
         }
       }
       catch (OperationCanceledException) { /* client disconnected */ }
       finally
       {
-        broadcaster.Unsubscribe(id, channel);
-        channel.Writer.TryComplete();
+        // Unsubscribe completes the channel writer so ReadAllAsync terminates cleanly.
+        broadcaster.Unsubscribe(id, reader);
       }
     })
     .Produces(StatusCodes.Status200OK)
@@ -261,9 +260,9 @@ public static class DocumentsEndpoints
   }
 
   private static async Task WriteSseEventAsync(
-    HttpResponse response, Guid documentId, string status, string? error, CancellationToken ct)
+    HttpResponse response, Guid documentId, DocumentStatus status, string? error, CancellationToken ct)
   {
-    var json = JsonSerializer.Serialize(new { documentId, status, error });
+    var json = JsonSerializer.Serialize(new { documentId, status = status.ToString(), error });
     await response.WriteAsync($"data: {json}\n\n", ct);
     await response.Body.FlushAsync(ct);
   }

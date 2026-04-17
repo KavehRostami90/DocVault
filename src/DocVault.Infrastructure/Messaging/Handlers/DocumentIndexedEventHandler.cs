@@ -1,5 +1,6 @@
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Realtime;
+using DocVault.Domain.Documents;
 using DocVault.Domain.Events;
 
 namespace DocVault.Infrastructure.Messaging.Handlers;
@@ -13,7 +14,7 @@ public sealed class DocumentIndexedEventHandler : IEventHandler<DocumentIndexed>
 
   public Task HandleAsync(DocumentIndexed @event, CancellationToken cancellationToken = default)
   {
-    _broadcaster.Publish(@event.DocumentId.Value, "Indexed");
+    _broadcaster.Publish(@event.DocumentId.Value, DocumentStatus.Indexed);
     return Task.CompletedTask;
   }
 }
