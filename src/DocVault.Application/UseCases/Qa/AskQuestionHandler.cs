@@ -34,7 +34,7 @@ public sealed class AskQuestionHandler
 
     var candidates = query.DocumentId.HasValue
       ? search.Value.Items.Where(i => i.Document.Id.Value == query.DocumentId.Value).ToList()
-      : search.Value.Items;
+      : search.Value.Items.ToList();
 
     var contexts = BuildContexts(candidates, query.Question, query.MaxContexts);
     if (contexts.Count == 0)
