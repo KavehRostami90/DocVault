@@ -12,6 +12,7 @@ using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
 using DocVault.Application.UseCases.Imports.GetImportStatus;
 using DocVault.Application.UseCases.Imports.StartImportJob;
+using DocVault.Application.UseCases.Qa;
 using DocVault.Application.UseCases.Search;
 using DocVault.Application.UseCases.Tags.ListTags;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,7 @@ public static class DependencyInjection
     services.AddScoped<UpdateTagsHandler>();
     services.AddScoped<DeleteDocumentHandler>();
     services.AddScoped<SearchDocumentsHandler>();
+    services.AddScoped<AskQuestionHandler>();
     services.AddScoped<StartImportJobHandler>();
     services.AddScoped<GetImportStatusHandler>();
     services.AddScoped<ListTagsHandler>();
@@ -56,4 +58,3 @@ public static class DependencyInjection
     return services;
   }
 }
-

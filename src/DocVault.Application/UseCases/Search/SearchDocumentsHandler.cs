@@ -27,7 +27,7 @@ public sealed partial class SearchDocumentsHandler
     _logger    = logger;
   }
 
-  public async Task<Result<Page<SearchResultItem>>> HandleAsync(SearchDocumentsQuery query, CancellationToken cancellationToken = default)
+  public async Task<Result<SearchPageResult>> HandleAsync(SearchDocumentsQuery query, CancellationToken cancellationToken = default)
   {
     var ownerId = query.IsAdmin ? null : query.OwnerId;
 
@@ -43,7 +43,7 @@ public sealed partial class SearchDocumentsHandler
     }
 
     var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, ownerId, queryVector, cancellationToken);
-    return Result<Page<SearchResultItem>>.Success(page);
+    return Result<SearchPageResult>.Success(new SearchPageResult(page, UsedSemanticSearch: queryVector is not null));
   }
 
   [LoggerMessage(Level = LogLevel.Warning,

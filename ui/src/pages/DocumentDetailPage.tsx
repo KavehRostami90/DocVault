@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle, Copy, Check } from 'lucide-react'
+import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle, Copy, Check, Sparkles } from 'lucide-react'
 import { getDocument, getDocumentDownloadBlob, getDocumentPreviewBlob, updateTags, deleteDocument, getExtractedText, getExtractedTextBlob } from '../api/documents'
+import { askQuestion } from '../api/qa'
 import StatusBadge from '../components/StatusBadge'
-import type { DocumentDetail } from '../types'
+import type { DocumentDetail, QaResponse } from '../types'
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -30,6 +31,10 @@ export default function DocumentDetailPage() {
   const [textError, setTextError] = useState<string | null>(null)
   const [textCopied, setTextCopied] = useState(false)
   const [downloadingText, setDownloadingText] = useState(false)
+  const [question, setQuestion] = useState('')
+  const [qa, setQa] = useState<QaResponse | null>(null)
+  const [qaLoading, setQaLoading] = useState(false)
+  const [qaError, setQaError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -146,6 +151,26 @@ export default function DocumentDetailPage() {
       setTextError(e instanceof Error ? e.message : 'Failed to download text')
     } finally {
       setDownloadingText(false)
+    }
+  }
+
+  const handleAskDocument = async () => {
+    if (!id || !question.trim()) return
+    setQaLoading(true)
+    setQaError(null)
+    try {
+      const response = await askQuestion({
+        question: question.trim(),
+        documentId: id,
+        maxDocuments: 12,
+        maxContexts: 8
+      })
+      setQa(response)
+    } catch (e) {
+      setQa(null)
+      setQaError(e instanceof Error ? e.message : 'Failed to answer question')
+    } finally {
+      setQaLoading(false)
     }
   }
 
@@ -270,6 +295,45 @@ export default function DocumentDetailPage() {
           )}
         </div>
       )}
+
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="w-4 h-4 text-indigo-400" />
+          <h2 className="text-white font-medium">Ask this document</h2>
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAskDocument()}
+            placeholder="e.g. When does this contract end?"
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+          />
+          <button
+            onClick={handleAskDocument}
+            disabled={!question.trim() || qaLoading}
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          >
+            {qaLoading ? 'Asking...' : 'Ask'}
+          </button>
+        </div>
+        {qaError && <p className="text-red-400 text-xs mt-3">{qaError}</p>}
+        {qa && (
+          <div className="mt-4 bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+            <p className="text-slate-100 text-sm leading-relaxed">{qa.answer}</p>
+            {qa.citations.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Citations</p>
+                {qa.citations.slice(0, 2).map((c, i) => (
+                  <p key={`${c.documentId}-${i}`} className="text-xs text-slate-400">
+                    {c.excerpt}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 mb-4">
         <div className="flex items-center justify-between mb-4">

@@ -12,17 +12,17 @@ public sealed class FakeEmbeddingProviderTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task EmbedAsync_Returns128DimensionalVector()
+    public async Task EmbedAsync_Returns768DimensionalVector()
     {
         var vector = await _provider.EmbedAsync("hello world");
-        Assert.Equal(128, vector.Length);
+        Assert.Equal(768, vector.Length);
     }
 
     [Fact]
-    public async Task EmbedAsync_EmptyString_Returns128ZeroVector()
+    public async Task EmbedAsync_EmptyString_Returns768ZeroVector()
     {
         var vector = await _provider.EmbedAsync(string.Empty);
-        Assert.Equal(128, vector.Length);
+        Assert.Equal(768, vector.Length);
         Assert.All(vector, v => Assert.Equal(0f, v));
     }
 
@@ -115,7 +115,7 @@ public sealed class FakeEmbeddingProviderTests
     {
         using var cts = new CancellationTokenSource();
         var vector = await _provider.EmbedAsync("text", cts.Token);
-        Assert.Equal(128, vector.Length);
+        Assert.Equal(768, vector.Length);
     }
 }
 

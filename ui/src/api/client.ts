@@ -12,6 +12,22 @@ export function initClient(getToken: () => string | null, onUnauthorized: () => 
   _onUnauthorized = onUnauthorized
 }
 
+// Singleton in-flight refresh promise. Concurrent 401s share one refresh call;
+// the winner's result is applied to all waiters.
+let _refreshPromise: Promise<string> | null = null
+
+async function refreshOnce(): Promise<string> {
+  if (!_refreshPromise) {
+    _refreshPromise = authApi.refresh()
+      .then(res => {
+        sessionStorage.setItem('dv_access_token', res.accessToken)
+        return res.accessToken
+      })
+      .finally(() => { _refreshPromise = null })
+  }
+  return _refreshPromise
+}
+
 async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const token = _getToken?.()
 
@@ -25,12 +41,12 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
 
   let r = await doFetch()
 
-  // On 401: attempt one silent token refresh then retry
+  // On 401: attempt one silent token refresh then retry.
+  // refreshOnce() serialises concurrent calls so only one refresh hits the server.
   if (r.status === 401) {
     try {
-      const refreshed = await authApi.refresh()
-      sessionStorage.setItem('dv_access_token', refreshed.accessToken)
-      headers['Authorization'] = `Bearer ${refreshed.accessToken}`
+      const newToken = await refreshOnce()
+      headers['Authorization'] = `Bearer ${newToken}`
       r = await doFetch()
     } catch {
       _onUnauthorized?.()

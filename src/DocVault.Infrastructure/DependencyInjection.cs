@@ -2,6 +2,7 @@ using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
+using DocVault.Application.Abstractions.Qa;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Abstractions.Users;
@@ -13,6 +14,7 @@ using DocVault.Infrastructure.Messaging;
 using DocVault.Infrastructure.Messaging.Handlers;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Persistence.Repositories;
+using DocVault.Infrastructure.Qa;
 using DocVault.Infrastructure.Storage;
 using DocVault.Infrastructure.Text;
 using Microsoft.AspNetCore.Identity;
@@ -101,14 +103,25 @@ public static class DependencyInjection
     services.AddSingleton<ITextExtractor, CompositeTextExtractor>();
 
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
+    services.Configure<QaOptions>(configuration.GetSection(QaOptions.Section));
     if (openAiOptions.IsConfigured)
     {
       services.Configure<OpenAiOptions>(configuration.GetSection(OpenAiOptions.Section));
       services.AddHttpClient<IEmbeddingProvider, OpenAiEmbeddingProvider>();
+      services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>();
     }
     else
     {
-      services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
+      services.AddSingleton<IEmbeddingProvider>(sp =>
+      {
+        sp.GetRequiredService<ILoggerFactory>()
+          .CreateLogger("DocVault.Infrastructure")
+          .LogWarning(
+            "Embedding provider: FakeEmbeddingProvider — semantic search will produce meaningless results. " +
+            "Configure OpenAI:ApiKey (or point OpenAI:BaseUrl at an Ollama instance) for real embeddings.");
+        return new FakeEmbeddingProvider();
+      });
+      services.AddSingleton<IQuestionAnsweringService, FallbackQuestionAnsweringService>();
     }
 
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();

@@ -23,23 +23,32 @@ internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
     float[]? queryVector,
     CancellationToken ct)
   {
+    // InMemory provider cannot do vector search; if no text terms were provided there is
+    // nothing to match against so return an empty page instead of crashing in BuildOrFilter.
+    if (terms.Length == 0)
+      return new Page<SearchResultItem>([], page, size, 0);
+
     IQueryable<Document> query = db.Documents.Include(d => d.Tags);
     query = query.Where(BuildOrFilter(terms));
 
     if (ownerId.HasValue)
       query = query.Where(d => d.OwnerId == ownerId);
 
-    var total = await query.LongCountAsync(ct);
-    var docs  = await query.ToListAsync(ct);
+    // Load all matching docs to score them in-memory, then paginate.
+    // The extra LongCountAsync round-trip is unnecessary since we already have the full set.
+    var docs = await query.ToListAsync(ct);
 
     var items = docs
       .Select(d => new SearchResultItem(d, DocumentScorer.Compute(d, terms)))
       .OrderByDescending(i => i.Score)
+      .ToList();
+
+    var paged = items
       .Skip((page - 1) * size)
       .Take(size)
       .ToList();
 
-    return new Page<SearchResultItem>(items, page, size, total);
+    return new Page<SearchResultItem>(paged, page, size, (long)items.Count);
   }
 
   // Builds: d => (d.Title.Contains(t1) || d.Text.Contains(t1)) || ...

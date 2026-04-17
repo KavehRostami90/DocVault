@@ -18,18 +18,40 @@ public sealed class PdfTextExtractor : ITextExtractor
   /// <param name="contentType">MIME content type (informational; unused by this extractor).</param>
   /// <param name="cancellationToken">Cancellation token.</param>
   /// <returns>Concatenated plain text from all pages, separated by newlines.</returns>
-  public Task<string> ExtractAsync(Stream content, string contentType, CancellationToken cancellationToken = default)
+  public async Task<string> ExtractAsync(Stream content, string contentType, CancellationToken cancellationToken = default)
   {
-    using var doc = PdfDocument.Open(content, new ParsingOptions { ClipPaths = true });
-
-    var builder = new StringBuilder();
-    foreach (Page page in doc.GetPages())
+    // PdfPig requires a seekable stream. Azure Blob download streams are not seekable,
+    // so buffer into a MemoryStream when needed.
+    Stream seekable;
+    bool disposeSeekable;
+    if (content.CanSeek)
     {
-      cancellationToken.ThrowIfCancellationRequested();
-      builder.AppendLine(page.Text);
+      seekable = content;
+      disposeSeekable = false;
+    }
+    else
+    {
+      seekable = new MemoryStream();
+      await content.CopyToAsync(seekable, cancellationToken);
+      seekable.Position = 0;
+      disposeSeekable = true;
     }
 
-    content.Position = 0;
-    return Task.FromResult(builder.ToString());
+    try
+    {
+      using var doc = PdfDocument.Open(seekable, new ParsingOptions { ClipPaths = true });
+      var builder = new StringBuilder();
+      foreach (Page page in doc.GetPages())
+      {
+        cancellationToken.ThrowIfCancellationRequested();
+        builder.AppendLine(page.Text);
+      }
+      return builder.ToString();
+    }
+    finally
+    {
+      if (disposeSeekable)
+        await seekable.DisposeAsync();
+    }
   }
 }

@@ -39,6 +39,9 @@
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.2.0" />
     <PackageVersion Include="Pgvector" Version="0.3.2" />
     <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />
+    <!-- Security vulnerability fixes -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.15" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="9.0.15" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Moq" Version="4.20.72" />

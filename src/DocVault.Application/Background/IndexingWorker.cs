@@ -118,7 +118,8 @@ public sealed partial class IndexingWorker : BackgroundService
       if (document is not null)
       {
         document.AttachText(result.Text);
-        document.AttachEmbedding(result.Embedding);
+        if (result.Embedding is not null)
+          document.AttachEmbedding(result.Embedding);
         document.MarkIndexed();
         await documentRepository.UpdateAsync(document, ct);
       }

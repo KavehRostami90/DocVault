@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, FileText, Zap, AlertCircle } from 'lucide-react'
+import { Search, FileText, Zap, AlertCircle, Sparkles } from 'lucide-react'
 import { searchDocuments } from '../api/search'
-import type { SearchResultItem } from '../types'
+import { askQuestion } from '../api/qa'
+import type { QaResponse, SearchResultItem } from '../types'
 
 export default function SearchPage() {
   const navigate = useNavigate()
@@ -12,6 +13,9 @@ export default function SearchPage() {
   const [searched, setSearched] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [answering, setAnswering] = useState(false)
+  const [qa, setQa] = useState<QaResponse | null>(null)
+  const [qaError, setQaError] = useState<string | null>(null)
 
   const search = async () => {
     if (!query.trim()) return
@@ -21,11 +25,28 @@ export default function SearchPage() {
       const res = await searchDocuments(query.trim())
       setResults(res.items)
       setSearched(true)
+      setQa(null)
+      setQaError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Search failed')
       setSearched(true)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const ask = async () => {
+    if (!query.trim()) return
+    setAnswering(true)
+    setQaError(null)
+    try {
+      const res = await askQuestion({ question: query.trim(), maxDocuments: 8, maxContexts: 6 })
+      setQa(res)
+    } catch (e) {
+      setQaError(e instanceof Error ? e.message : 'Question answering failed')
+      setQa(null)
+    } finally {
+      setAnswering(false)
     }
   }
 
@@ -55,7 +76,49 @@ export default function SearchPage() {
         >
           {loading ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" /> : 'Search'}
         </button>
+        <button
+          onClick={ask}
+          disabled={!query.trim() || answering}
+          className="absolute right-28 top-1/2 -translate-y-1/2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          {answering ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin block" /> : 'Ask'}
+        </button>
       </div>
+
+      {qaError && (
+        <div className="flex items-center gap-3 bg-red-900/20 border border-red-900/30 rounded-xl p-4 mb-6">
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+          <p className="text-red-400 text-sm">{qaError}</p>
+        </div>
+      )}
+
+      {qa && (
+        <div className="bg-slate-900 border border-indigo-900/40 rounded-xl p-5 mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-indigo-400" />
+            <p className="text-white text-sm font-medium">Answer</p>
+            <span className="text-xs text-slate-500">
+              {qa.answeredByModel ? 'Model-generated with citations' : 'Extractive fallback'}
+            </span>
+          </div>
+          <p className="text-slate-200 text-sm leading-relaxed">{qa.answer}</p>
+          {qa.citations.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Sources</p>
+              {qa.citations.slice(0, 3).map((c, i) => (
+                <button
+                  key={`${c.documentId}-${i}`}
+                  onClick={() => navigate(`/documents/${c.documentId}`)}
+                  className="w-full text-left bg-slate-800/70 hover:bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 transition-colors"
+                >
+                  <p className="text-xs text-indigo-300 mb-1">{c.title}</p>
+                  <p className="text-xs text-slate-400 line-clamp-2">{c.excerpt}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading && (
         <div className="space-y-3 animate-pulse">

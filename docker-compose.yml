@@ -27,6 +27,7 @@ services:
       OpenAI__ApiKey: ${DOCVAULT_OPENAI_API_KEY}
       OpenAI__Model: ${DOCVAULT_OPENAI_MODEL}
       OpenAI__Dimensions: ${DOCVAULT_OPENAI_DIMENSIONS}
+      QA__Model: ${DOCVAULT_QA_MODEL:-llama3.1}
     extra_hosts:
       # Lets the container resolve host.docker.internal on Linux (no-op on Docker Desktop).
       - "host.docker.internal:host-gateway"

@@ -149,6 +149,49 @@ public sealed class IndexingWorkerTests
     }
 
     // -------------------------------------------------------------------------
+    // Empty-text path — OCR produces no text → document indexed without embedding
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessItem_PipelineReturnsEmptyText_MarksDocumentIndexedWithNoEmbedding()
+    {
+        var documentId = DocumentId.New();
+        var document   = MakeDocument(documentId);
+        var job        = MakeJob(documentId);
+        var workItem   = new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType);
+
+        var (worker, queue, pipeline, jobRepo, docRepo) = BuildWorker(
+            jobRepo => jobRepo.Setup(r => r.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                              .ReturnsAsync(job),
+            docRepo => docRepo.Setup(r => r.GetAsync(documentId, It.IsAny<CancellationToken>()))
+                              .ReturnsAsync(document));
+
+        // Pipeline returns empty text (e.g. OCR produced no output) with null embedding
+        pipeline.Setup(p => p.RunAsync(workItem.StoragePath, workItem.ContentType, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new IngestionResult(string.Empty, null));
+
+        var processingDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        docRepo.Setup(r => r.UpdateAsync(It.IsAny<Document>(), It.IsAny<CancellationToken>()))
+               .Callback<Document, CancellationToken>((_, _) => processingDone.TrySetResult())
+               .Returns(Task.CompletedTask);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        SetupQueueSingleItem(queue, workItem, cts);
+
+        await worker.StartAsync(CancellationToken.None);
+        await processingDone.Task.WaitAsync(cts.Token);
+        await worker.StopAsync(CancellationToken.None);
+
+        // Document should be indexed with empty text and no embedding (OCR failed silently)
+        Assert.Equal(DocumentStatus.Indexed, document.Status);
+        Assert.Equal(string.Empty, document.Text);
+        Assert.Null(document.Embedding);
+
+        // Job should still be completed — OCR failure is not a pipeline error
+        Assert.Equal(ImportStatus.Completed, job.Status);
+    }
+
+    // -------------------------------------------------------------------------
     // Failure path — pipeline throws → marks both job and document as failed
     // -------------------------------------------------------------------------
 
