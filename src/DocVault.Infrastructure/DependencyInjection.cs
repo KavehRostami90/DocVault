@@ -3,6 +3,7 @@ using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Qa;
+using DocVault.Application.Abstractions.Realtime;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Abstractions.Users;
@@ -15,6 +16,7 @@ using DocVault.Infrastructure.Messaging.Handlers;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Persistence.Repositories;
 using DocVault.Infrastructure.Qa;
+using DocVault.Infrastructure.Realtime;
 using DocVault.Infrastructure.Storage;
 using DocVault.Infrastructure.Text;
 using Microsoft.AspNetCore.Identity;
@@ -124,8 +126,11 @@ public static class DependencyInjection
       services.AddSingleton<IQuestionAnsweringService, FallbackQuestionAnsweringService>();
     }
 
+    services.AddSingleton<IDocumentStatusBroadcaster, DocumentStatusBroadcaster>();
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
     services.AddSingleton<IEventHandler<DocumentImported>, DocumentImportedHandler>();
+    services.AddSingleton<IEventHandler<DocumentIndexed>, DocumentIndexedEventHandler>();
+    services.AddSingleton<IEventHandler<DocumentFailed>, DocumentFailedEventHandler>();
     services.AddSingleton<IEventHandler<SearchExecuted>, SearchExecutedHandler>();
 
     services.AddHostedService<DatabaseInitializer>();

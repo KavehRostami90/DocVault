@@ -4,6 +4,7 @@ import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTr
 import { getDocument, getDocumentDownloadBlob, getDocumentPreviewBlob, updateTags, deleteDocument, getExtractedText, getExtractedTextBlob } from '../api/documents'
 import { askQuestion } from '../api/qa'
 import StatusBadge from '../components/StatusBadge'
+import { useDocumentStatusStream } from '../hooks/useDocumentStatusStream'
 import type { DocumentDetail, QaResponse } from '../types'
 
 function formatBytes(bytes: number) {
@@ -17,6 +18,7 @@ export default function DocumentDetailPage() {
   const navigate = useNavigate()
   const [doc, setDoc] = useState<DocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [streamActive, setStreamActive] = useState(false)
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [saving, setSaving] = useState(false)
@@ -38,8 +40,17 @@ export default function DocumentDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    getDocument(id).then(d => { setDoc(d); setTags(d.tags.slice()) }).finally(() => setLoading(false))
+    getDocument(id).then(d => {
+      setDoc(d)
+      setTags(d.tags.slice())
+      setStreamActive(d.status === 'Pending' || d.status === 'Imported')
+    }).finally(() => setLoading(false))
   }, [id])
+
+  useDocumentStatusStream(id, streamActive, (status) => {
+    setDoc(prev => prev ? { ...prev, status } : prev)
+    if (status === 'Indexed' || status === 'Failed') setStreamActive(false)
+  })
 
   const addTag = () => {
     const t = tagInput.trim().toLowerCase()
@@ -207,6 +218,12 @@ export default function DocumentDetailPage() {
             <p className="text-slate-500 text-sm mt-0.5">{doc.fileName}</p>
           </div>
           <StatusBadge status={doc.status} />
+          {streamActive && (
+            <span className="flex items-center gap-1 text-xs text-indigo-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+              live
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-3 mb-6">
           <button

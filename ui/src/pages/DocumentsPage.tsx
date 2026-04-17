@@ -37,6 +37,13 @@ export default function DocumentsPage() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
+    if (!data) return
+    const hasPending = data.items.some(d => d.status === 'Pending' || d.status === 'Imported')
+    if (!hasPending) return
+    const interval = setInterval(load, 5_000)
+    return () => clearInterval(interval)
+  }, [data, load])
+  useEffect(() => {
     listTags()
       .then(ts => setTags(ts.map(t => t.name)))
       .catch(() => { /* tags are optional */ })

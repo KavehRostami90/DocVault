@@ -1,3 +1,4 @@
+using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Background.Queue;
 using DocVault.Application.Pipeline;
@@ -23,18 +24,21 @@ public sealed partial class IndexingWorker : BackgroundService
   private readonly IWorkQueue<IndexingWorkItem> _queue;
   private readonly IIngestionPipeline _pipeline;
   private readonly IServiceScopeFactory _scopeFactory;
+  private readonly IDomainEventDispatcher _eventDispatcher;
   private readonly ILogger<IndexingWorker> _logger;
 
   public IndexingWorker(
     IWorkQueue<IndexingWorkItem> queue,
     IIngestionPipeline pipeline,
     IServiceScopeFactory scopeFactory,
+    IDomainEventDispatcher eventDispatcher,
     ILogger<IndexingWorker> logger)
   {
-    _queue        = queue;
-    _pipeline     = pipeline;
-    _scopeFactory = scopeFactory;
-    _logger       = logger;
+    _queue          = queue;
+    _pipeline       = pipeline;
+    _scopeFactory   = scopeFactory;
+    _eventDispatcher = eventDispatcher;
+    _logger         = logger;
   }
 
   // -------------------------------------------------------------------------
@@ -122,6 +126,8 @@ public sealed partial class IndexingWorker : BackgroundService
           document.AttachEmbedding(result.Embedding);
         document.MarkIndexed();
         await documentRepository.UpdateAsync(document, ct);
+        await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);
+        document.ClearDomainEvents();
       }
 
       LogCompleted(_logger, item.JobId);
@@ -159,6 +165,8 @@ public sealed partial class IndexingWorker : BackgroundService
       {
         document.MarkFailed(errorMessage);
         await documentRepository.UpdateAsync(document, ct);
+        await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);
+        document.ClearDomainEvents();
       }
     }
     catch (Exception updateEx)
