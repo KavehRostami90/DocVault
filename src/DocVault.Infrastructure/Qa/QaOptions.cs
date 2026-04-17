@@ -10,8 +10,8 @@ public sealed class QaOptions
   /// <summary>
   /// Chat-completions model name.
   /// </summary>
-  public string Model { get; init; } = "gpt-4o-mini";
-
+  public string Model { get; init; } = "llama3.1";
+  
   /// <summary>
   /// Maximum tokens reserved for the final answer.
   /// </summary>

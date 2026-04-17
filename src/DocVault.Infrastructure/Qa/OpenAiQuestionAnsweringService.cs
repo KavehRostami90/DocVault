@@ -28,7 +28,8 @@ public sealed partial class OpenAiQuestionAnsweringService : IQuestionAnsweringS
     _logger = logger;
 
     _http.BaseAddress = new Uri(_openAiOptions.BaseUrl.TrimEnd('/') + "/");
-    _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _openAiOptions.ApiKey);
+    if (!string.IsNullOrWhiteSpace(_openAiOptions.ApiKey))
+      _http.DefaultRequestHeaders.Authorization = new A
   }
 
   public async Task<QaAnswerResult> AnswerAsync(string question, IReadOnlyList<QaContextChunk> contexts, CancellationToken cancellationToken = default)
