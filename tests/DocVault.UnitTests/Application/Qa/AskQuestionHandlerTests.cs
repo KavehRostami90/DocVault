@@ -39,19 +39,19 @@ public sealed class AskQuestionHandlerTests
         Mock<IQuestionAnsweringService> QaService)
     BuildHandler()
     {
-        var docRepo           = new Mock<IDocumentRepository>();
-        var embeddingProvider = new Mock<IEmbeddingProvider>();
-        var searchLogger      = new Mock<ILogger<SearchDocumentsHandler>>();
-        var handlerLogger     = new Mock<ILogger<AskQuestionHandler>>();
+        var docRepo                = new Mock<IDocumentRepository>();
+        var embeddingProvider      = new Mock<IEmbeddingProvider>();
+        var searchHandlerLogger    = new Mock<ILogger<SearchDocumentsHandler>>();
+        var askQuestionHandlerLogger = new Mock<ILogger<AskQuestionHandler>>();
 
         // Embedding provider returns a dummy vector so the semantic-search path is exercised.
         embeddingProvider
             .Setup(e => e.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new float[768]);
 
-        var searchHandler = new SearchDocumentsHandler(docRepo.Object, embeddingProvider.Object, searchLogger.Object);
+        var searchHandler = new SearchDocumentsHandler(docRepo.Object, embeddingProvider.Object, searchHandlerLogger.Object);
         var qaService     = new Mock<IQuestionAnsweringService>();
-        var handler       = new AskQuestionHandler(searchHandler, qaService.Object, handlerLogger.Object);
+        var handler       = new AskQuestionHandler(searchHandler, qaService.Object, askQuestionHandlerLogger.Object);
 
         return (handler, docRepo, qaService);
     }
@@ -223,8 +223,10 @@ public sealed class AskQuestionHandlerTests
     {
         var (handler, docRepo, qaService) = BuildHandler();
 
-        // Long text produces multiple chunks (each ~700 chars).
-        var longText = string.Join(" ", Enumerable.Repeat("word", 500));
+        // 500 words × ~5 chars each ≈ 2 500 characters; with a 700-char window this
+        // produces 4+ chunks, ensuring MaxContexts trimming is actually exercised.
+        const int WordCount  = 500;
+        var longText = string.Join(" ", Enumerable.Repeat("word", WordCount));
         var doc      = MakeIndexedDocument(DocumentId.New(), "Big Doc", longText);
 
         docRepo.Setup(r => r.SearchAsync(
@@ -240,6 +242,8 @@ public sealed class AskQuestionHandlerTests
             .Callback<string, IReadOnlyList<QaContextChunk>, CancellationToken>((_, ctxs, _) => capturedContexts = ctxs)
             .ReturnsAsync(new QaAnswerResult("Answer", true));
 
+        // 2 is less than the number of chunks produced by WordCount words, so the
+        // limiting behaviour is actually exercised.
         const int maxContexts = 2;
         await handler.HandleAsync(new AskQuestionQuery("word content", MaxContexts: maxContexts));
 
