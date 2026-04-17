@@ -87,6 +87,61 @@ public static class AdminEndpoints
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Admin: re-queue a document for indexing");
 
+    group.MapPost("/documents/bulk-delete", async (
+      BulkDocumentRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      DeleteDocumentHandler handler,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      int succeeded = 0, failed = 0;
+
+      foreach (var id in request.Ids)
+      {
+        var result = await handler.HandleAsync(
+          new DeleteDocumentCommand(new DocumentId(id), CallerId: null, IsAdmin: true), ct);
+        if (result.IsSuccess)
+        {
+          succeeded++;
+          logger.LogWarning("Admin {CallerId} deleted document {DocumentId}", caller.UserId, id);
+        }
+        else
+          failed++;
+      }
+
+      return Results.Ok(new BulkOperationResponse(succeeded, failed));
+    })
+    .Produces<BulkOperationResponse>()
+    .WithSummary("Admin: bulk delete documents");
+
+    group.MapPost("/documents/bulk-reindex", async (
+      BulkDocumentRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      ReindexDocumentHandler handler,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      int succeeded = 0, failed = 0;
+
+      foreach (var id in request.Ids)
+      {
+        var result = await handler.HandleAsync(new ReindexDocumentCommand(new DocumentId(id)), ct);
+        if (result.IsSuccess)
+        {
+          succeeded++;
+          logger.LogInformation("Admin {CallerId} re-indexed document {DocumentId}", caller.UserId, id);
+        }
+        else
+          failed++;
+      }
+
+      return Results.Ok(new BulkOperationResponse(succeeded, failed));
+    })
+    .Produces<BulkOperationResponse>()
+    .WithSummary("Admin: bulk reindex documents");
+
     group.MapGet("/documents/{id:guid}/preview", async (
       Guid id,
       GetDocumentFileHandler handler,

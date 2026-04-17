@@ -22,6 +22,11 @@ export interface AdminStats {
   documentsByStatus: Record<string, number>
 }
 
+export interface BulkOperationResult {
+  succeeded: number
+  failed: number
+}
+
 export const adminApi = {
   getStats: () => get<AdminStats>('/admin/stats'),
 
@@ -45,6 +50,12 @@ export const adminApi = {
   },
 
   deleteDocument: (id: string) => del(`/admin/documents/${id}`),
+
+  bulkDeleteDocuments: (ids: string[]) =>
+    post<BulkOperationResult>('/admin/documents/bulk-delete', { ids }),
+
+  bulkReindexDocuments: (ids: string[]) =>
+    post<BulkOperationResult>('/admin/documents/bulk-reindex', { ids }),
 
   getDocumentPreviewBlob: (id: string) => getBlob(`/admin/documents/${id}/preview`),
 
