@@ -31,7 +31,7 @@ public static class QaEndpoints
       if (!result.IsSuccess || result.Value is null)
         return Results.Problem(
           detail: result.Error ?? "Question-answering service temporarily unavailable.",
-          statusCode: StatusCodes.Status500InternalServerError);
+          statusCode: StatusCodes.Status503ServiceUnavailable);
 
       var payload = result.Value;
       var response = new AskQuestionResponse(

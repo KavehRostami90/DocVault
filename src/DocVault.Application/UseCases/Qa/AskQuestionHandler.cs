@@ -45,7 +45,15 @@ public sealed class AskQuestionHandler
         AnsweredByModel: false));
     }
 
-    var answer = await _qa.AnswerAsync(query.Question, contexts, cancellationToken);
+    QaAnswerResult answer;
+    try
+    {
+      answer = await _qa.AnswerAsync(query.Question, contexts, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+      return Result<AskQuestionResult>.Failure($"QA service unavailable: {ex.Message}");
+    }
 
     var citations = contexts
       .Select(c => new AskQuestionCitation(c.DocumentId, c.DocumentTitle, c.Text[..Math.Min(180, c.Text.Length)], c.RetrievalScore))
