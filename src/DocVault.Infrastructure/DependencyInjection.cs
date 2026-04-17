@@ -108,7 +108,15 @@ public static class DependencyInjection
     }
     else
     {
-      services.AddSingleton<IEmbeddingProvider, FakeEmbeddingProvider>();
+      services.AddSingleton<IEmbeddingProvider>(sp =>
+      {
+        sp.GetRequiredService<ILoggerFactory>()
+          .CreateLogger("DocVault.Infrastructure")
+          .LogWarning(
+            "Embedding provider: FakeEmbeddingProvider — semantic search will produce meaningless results. " +
+            "Configure OpenAI:ApiKey (or point OpenAI:BaseUrl at an Ollama instance) for real embeddings.");
+        return new FakeEmbeddingProvider();
+      });
     }
 
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();

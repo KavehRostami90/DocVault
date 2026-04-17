@@ -45,7 +45,7 @@ var baseAppSettings = [
   { name: 'Auth__AdminEmail',            value: adminEmail }
   { name: 'Auth__AdminPassword',         value: adminPassword }
   { name: 'OpenAI__Model',               value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',          value: '1536' }
+  { name: 'OpenAI__Dimensions',          value: '768' }
 ]
 
 var allAppSettings = !empty(openAiApiKey)

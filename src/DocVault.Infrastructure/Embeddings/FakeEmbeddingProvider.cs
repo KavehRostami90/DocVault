@@ -4,7 +4,7 @@ namespace DocVault.Infrastructure.Embeddings;
 
 /// <summary>
 /// Development embedding provider that uses <b>feature hashing</b> (the hashing trick)
-/// to produce a deterministic, fixed-size 128-dimensional bag-of-words vector.
+/// to produce a deterministic, fixed-size 768-dimensional bag-of-words vector.
 /// <para>
 /// Each whitespace-delimited token is lowercased, hashed with a stable 32-bit algorithm,
 /// and its count is accumulated into the corresponding bucket. The final vector is
@@ -19,14 +19,14 @@ namespace DocVault.Infrastructure.Embeddings;
 /// </summary>
 public sealed class FakeEmbeddingProvider : IEmbeddingProvider
 {
-  private const int Dimensions = 128;
+  private const int Dimensions = 768;
 
   /// <summary>
-  /// Produces a 128-dimensional feature-hashed embedding of <paramref name="text"/>.
+  /// Produces a 768-dimensional feature-hashed embedding of <paramref name="text"/>.
   /// </summary>
   /// <param name="text">Input text to embed.</param>
   /// <param name="cancellationToken">Cancellation token (unused — computation is synchronous).</param>
-  /// <returns>An L2-normalised float array of length 128.</returns>
+  /// <returns>An L2-normalised float array of length 768.</returns>
   public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
   {
     var vector = new float[Dimensions];
