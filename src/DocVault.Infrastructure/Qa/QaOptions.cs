@@ -11,7 +11,7 @@ public sealed class QaOptions
   /// Chat-completions model name.
   /// </summary>
   public string Model { get; init; } = "llama3.1";
-
+  
   /// <summary>
   /// Maximum tokens reserved for the final answer.
   /// </summary>
