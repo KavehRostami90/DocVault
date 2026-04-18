@@ -72,6 +72,8 @@ public sealed class AuthorizationTests : IClassFixture<DocVaultFactory>
     [InlineData("GET",    "/api/v1/admin/stats")]
     [InlineData("GET",    "/api/v1/admin/users")]
     [InlineData("GET",    "/api/v1/admin/documents")]
+    [InlineData("POST",   "/api/v1/admin/documents/bulk-delete")]
+    [InlineData("POST",   "/api/v1/admin/documents/bulk-reindex")]
     public async Task AdminEndpoints_WithUserRole_Return403(string method, string path)
     {
         // Factory already signs every request in as a regular User (not Admin).

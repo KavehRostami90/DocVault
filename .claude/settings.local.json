@@ -12,7 +12,8 @@
       "WebFetch(domain:www.npgsql.org)",
       "Bash(xargs wc:*)",
       "Bash(ls *.md docs/)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

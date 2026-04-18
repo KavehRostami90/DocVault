@@ -79,6 +79,37 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
     });
   }
 
+  /// <summary>
+  /// Creates an <see cref="HttpClient"/> that is authenticated as an Admin user.
+  /// Use this for tests that call <c>/admin/*</c> endpoints requiring the Admin role.
+  /// </summary>
+  /// <remarks>
+  /// We register a <em>new</em> scheme name ("TestAdmin") rather than re-using "Test".
+  /// Re-registering the same scheme name would throw
+  /// <see cref="InvalidOperationException"/> ("Scheme already exists") because
+  /// <see cref="ConfigureWebHost"/> already registered it via <c>AddAuthentication</c>.
+  /// </remarks>
+  public HttpClient CreateAdminClient()
+  {
+    const string adminScheme = "TestAdmin";
+    return WithWebHostBuilder(builder =>
+      builder.ConfigureServices(services =>
+      {
+        services.AddAuthentication()
+          .AddScheme<AuthenticationSchemeOptions, TestAdminAuthHandler>(adminScheme, _ => { });
+
+        // Override the default scheme so requests are authenticated as the admin
+        // principal, not the regular User from TestAuthHandler.
+        services.Configure<AuthenticationOptions>(opts =>
+        {
+          opts.DefaultScheme = adminScheme;
+          opts.DefaultAuthenticateScheme = adminScheme;
+          opts.DefaultChallengeScheme = adminScheme;
+        });
+      }))
+      .CreateClient();
+  }
+
   protected override void Dispose(bool disposing)
   {
     if (disposing && Directory.Exists(_storageRoot))

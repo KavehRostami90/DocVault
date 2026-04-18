@@ -1,6 +1,7 @@
 using DocVault.Api.Composition;
 using DocVault.Api.Contracts.Admin;
 using DocVault.Api.Contracts.Common;
+using DocVault.Api.Validation;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Mappers;
 using DocVault.Application.Abstractions.Auth;
@@ -225,6 +226,33 @@ public static class AdminEndpoints
     .Produces(StatusCodes.Status204NoContent)
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Admin: delete a user");
+
+    group.MapPost("/users/{id}/reset-password", async (
+      string id,
+      ResetUserPasswordRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      UserManager<ApplicationUser> users,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      var user = await users.FindByIdAsync(id);
+      if (user is null) return Results.NotFound();
+
+      await users.RemovePasswordAsync(user);
+      var result = await users.AddPasswordAsync(user, request.NewPassword);
+
+      if (result.Succeeded)
+        logger.LogWarning("Admin {CallerId} set password for user {UserId} ({Email})", caller.UserId, id, user.Email);
+
+      return result.Succeeded ? Results.NoContent() : Results.Problem(
+        detail: string.Join("; ", result.Errors.Select(e => e.Description)),
+        statusCode: StatusCodes.Status422UnprocessableEntity);
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ResetUserPasswordRequest>())
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Admin: set a new password for any user");
 
     group.MapPut("/users/{id}/roles", async (
       string id,

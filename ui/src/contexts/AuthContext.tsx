@@ -13,6 +13,7 @@ interface AuthContextValue extends AuthState {
   loginAsGuest: () => Promise<void>
   logout: () => Promise<void>
   getToken: () => string | null
+  updateProfile: (displayName: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -125,8 +126,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getToken = useCallback(() => state.accessToken, [state.accessToken])
 
+  const updateProfile = useCallback(async (displayName: string) => {
+    const token = state.accessToken
+    if (!token) throw new Error('Not authenticated')
+    await authApi.updateProfile(token, displayName)
+    setState(prev => {
+      if (!prev.user) return prev
+      const updated = { ...prev.user, displayName }
+      sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(updated))
+      return { ...prev, user: updated }
+    })
+  }, [state.accessToken])
+
   return (
-    <AuthContext.Provider value={{ ...state, login, register, loginAsGuest, logout, getToken }}>
+    <AuthContext.Provider value={{ ...state, login, register, loginAsGuest, logout, getToken, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )

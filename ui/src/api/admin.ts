@@ -37,6 +37,9 @@ export const adminApi = {
   updateUserRoles: (id: string, roles: string[]) =>
     put(`/admin/users/${id}/roles`, { roles }),
 
+  setUserPassword: (id: string, newPassword: string) =>
+    post<void>(`/admin/users/${id}/reset-password`, { newPassword }),
+
   listDocuments: (page = 1, size = 50, filter: AdminDocumentFilter = 'all') => {
     const query = new URLSearchParams({
       page: String(page),

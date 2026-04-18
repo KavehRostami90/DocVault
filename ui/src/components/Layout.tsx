@@ -53,21 +53,25 @@ export default function Layout() {
 
         <div className="p-4 border-t border-slate-800 space-y-3">
           {user && (
-            <div className="flex items-center gap-2">
+            <NavLink
+              to="/profile"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-slate-800 transition-colors group"
+            >
               <div className="w-7 h-7 rounded-full bg-indigo-600/30 flex items-center justify-center flex-shrink-0">
                 <span className="text-indigo-300 text-xs font-semibold uppercase">
                   {(user.displayName || user.email)[0]}
                 </span>
               </div>
               <div className="min-w-0">
-                <p className="text-white text-xs font-medium truncate">
+                <p className="text-white text-xs font-medium truncate group-hover:text-indigo-300 transition-colors">
                   {user.displayName || user.email}
                 </p>
                 <p className="text-slate-500 text-xs truncate">
                   {user.isGuest ? 'Guest session' : user.role}
                 </p>
               </div>
-            </div>
+            </NavLink>
           )}
           {user?.isGuest && (
             <NavLink

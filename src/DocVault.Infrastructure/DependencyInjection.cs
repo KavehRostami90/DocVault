@@ -1,4 +1,5 @@
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Email;
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
@@ -10,6 +11,7 @@ using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Background.Queue;
 using DocVault.Domain.Events;
 using DocVault.Infrastructure.Auth;
+using DocVault.Infrastructure.Email;
 using DocVault.Infrastructure.Embeddings;
 using DocVault.Infrastructure.Messaging;
 using DocVault.Infrastructure.Messaging.Handlers;
@@ -65,6 +67,7 @@ public static class DependencyInjection
 
     services.Configure<AuthSettings>(configuration.GetSection(AuthSettings.Section));
     services.AddScoped<ITokenService, JwtTokenService>();
+    services.AddScoped<IEmailService, LogEmailService>();
     services.AddScoped<IdentitySeeder>();
 
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();

@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [guestLoading, setGuestLoading] = useState(false)
 
+  const resetSuccess = (location.state as { resetSuccess?: boolean } | null)?.resetSuccess
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -54,6 +56,12 @@ export default function LoginPage() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
           <h1 className="text-white text-xl font-semibold mb-6">Sign in</h1>
 
+          {resetSuccess && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm rounded-lg px-4 py-3 mb-4">
+              Password reset successfully. Sign in with your new password.
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-4 py-3 mb-4">
               {error}
@@ -74,7 +82,12 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm text-slate-400">Password</label>
+                <Link to="/forgot-password" className="text-xs text-indigo-400 hover:text-indigo-300">
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 type="password"
                 value={password}

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Trash2, KeyRound, X } from 'lucide-react'
 import { adminApi, type AdminUser } from '../../api/admin'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import type { AdminUserFilter } from './adminFilters'
@@ -17,6 +17,10 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
   const [error, setError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null)
   const [toastMsg, setToastMsg] = useState('')
+  const [pwTarget, setPwTarget] = useState<AdminUser | null>(null)
+  const [pwValue, setPwValue] = useState('')
+  const [pwError, setPwError] = useState('')
+  const [pwSaving, setPwSaving] = useState(false)
 
   useEffect(() => {
     load()
@@ -45,6 +49,28 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
       toast('Failed to delete user.')
     } finally {
       setPendingDelete(null)
+    }
+  }
+
+  function openPw(user: AdminUser) {
+    setPwTarget(user)
+    setPwValue('')
+    setPwError('')
+  }
+
+  async function handleSetPassword() {
+    if (!pwTarget) return
+    if (pwValue.length < 8) { setPwError('Min 8 characters.'); return }
+    setPwError('')
+    setPwSaving(true)
+    try {
+      await adminApi.setUserPassword(pwTarget.id, pwValue)
+      toast(`Password updated for "${pwTarget.email}".`)
+      setPwTarget(null)
+    } catch {
+      setPwError('Failed to set password.')
+    } finally {
+      setPwSaving(false)
     }
   }
 
@@ -125,7 +151,8 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
             ) : filteredUsers.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No users found for this category.</td></tr>
             ) : filteredUsers.map(u => (
-              <tr key={u.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+              <React.Fragment key={u.id}>
+              <tr className="border-b border-slate-800/50 hover:bg-slate-800/30">
                 <td className="px-4 py-3">
                   <div className="text-white font-medium">{u.displayName || '—'}</div>
                   <div className="text-slate-500 text-xs">{u.email}</div>
@@ -159,15 +186,60 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
                     : <span className="text-emerald-400 text-xs">Registered</span>}
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    onClick={() => setPendingDelete(u)}
-                    className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                    title="Delete user"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {!u.isGuest && (
+                      <button
+                        onClick={() => openPw(u)}
+                        className="p-1.5 rounded text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                        title="Set password"
+                      >
+                        <KeyRound className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setPendingDelete(u)}
+                      className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Delete user"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </td>
               </tr>
+              {pwTarget?.id === u.id && (
+                <tr className="bg-slate-800/40 border-b border-slate-800/50">
+                  <td colSpan={5} className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <KeyRound className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                      <span className="text-amber-400 text-xs font-medium">Set password for {pwTarget.email}</span>
+                      <input
+                        type="password"
+                        value={pwValue}
+                        onChange={e => setPwValue(e.target.value)}
+                        placeholder="New password (min 8 chars)"
+                        autoFocus
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-amber-500 transition-colors"
+                        onKeyDown={e => { if (e.key === 'Enter') handleSetPassword(); if (e.key === 'Escape') setPwTarget(null) }}
+                      />
+                      {pwError && <span className="text-rose-400 text-xs">{pwError}</span>}
+                      <button
+                        onClick={handleSetPassword}
+                        disabled={pwSaving}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs rounded-lg transition-colors flex-shrink-0"
+                      >
+                        {pwSaving ? 'Saving…' : 'Set'}
+                      </button>
+                      <button
+                        onClick={() => setPwTarget(null)}
+                        className="p-1.5 rounded text-slate-500 hover:text-white transition-colors flex-shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

@@ -1,9 +1,14 @@
+using DocVault.Api.Composition;
+using DocVault.Api.Contracts.Admin;
 using DocVault.Api.Contracts.Auth;
+using DocVault.Api.Contracts.Auth.Profile;
 using DocVault.Api.Middleware;
 using DocVault.Api.Validation;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Email;
 using DocVault.Infrastructure.Auth;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
 
 namespace DocVault.Api.Endpoints;
 
@@ -164,11 +169,134 @@ public static class AuthEndpoints
         : roles.Contains(AppRoles.Guest) ? AppRoles.Guest
         : AppRoles.User;
 
-      return Results.Ok(new UserInfo(user.Id, user.Email!, user.DisplayName, primaryRole, user.IsGuest));
+      return Results.Ok(new UserInfo(user.Id, user.Email!, user.DisplayName, primaryRole, user.IsGuest, user.CreatedAt));
     })
     .RequireAuthorization()
     .Produces<UserInfo>()
     .WithSummary("Get the current authenticated user's profile");
+
+    group.MapPut("/me", async (
+      UpdateProfileRequest request,
+      ICurrentUser currentUser,
+      UserManager<ApplicationUser> users,
+      CancellationToken ct) =>
+    {
+      if (!currentUser.IsAuthenticated || currentUser.UserId is null)
+        return Results.Unauthorized();
+
+      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
+      if (user is null) return Results.Unauthorized();
+
+      user.DisplayName = request.DisplayName;
+      var result = await users.UpdateAsync(user);
+      if (!result.Succeeded)
+        return Results.ValidationProblem(
+          result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description }));
+
+      return Results.NoContent();
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<UpdateProfileRequest>())
+    .RequireAuthorization()
+    .Produces(StatusCodes.Status204NoContent)
+    .WithSummary("Update the current user's display name");
+
+    group.MapPut("/me/reset-password", async (
+      ResetUserPasswordRequest request,
+      ICurrentUser currentUser,
+      UserManager<ApplicationUser> users,
+      CancellationToken ct) =>
+    {
+      if (!currentUser.IsAuthenticated || currentUser.UserId is null)
+        return Results.Unauthorized();
+
+      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
+      if (user is null) return Results.Unauthorized();
+
+      await users.RemovePasswordAsync(user);
+      var result = await users.AddPasswordAsync(user, request.NewPassword);
+
+      return result.Succeeded ? Results.NoContent() : Results.Problem(
+        detail: string.Join("; ", result.Errors.Select(e => e.Description)),
+        statusCode: StatusCodes.Status422UnprocessableEntity);
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ResetUserPasswordRequest>())
+    .RequireAuthorization(AuthPolicies.RequireAdmin)
+    .Produces(StatusCodes.Status204NoContent)
+    .WithSummary("Admin: reset own password without providing the current password");
+
+    group.MapPut("/me/password", async (
+      ChangePasswordRequest request,
+      ICurrentUser currentUser,
+      UserManager<ApplicationUser> users,
+      CancellationToken ct) =>
+    {
+      if (!currentUser.IsAuthenticated || currentUser.UserId is null)
+        return Results.Unauthorized();
+
+      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
+      if (user is null || user.IsGuest) return Results.Unauthorized();
+
+      var result = await users.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+      if (!result.Succeeded)
+        return Results.ValidationProblem(
+          result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description }));
+
+      return Results.NoContent();
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ChangePasswordRequest>())
+    .RequireAuthorization()
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status401Unauthorized)
+    .WithSummary("Change the current user's password");
+
+    group.MapPost("/forgot-password", async (
+      ForgotPasswordRequest request,
+      UserManager<ApplicationUser> users,
+      IEmailService email,
+      IOptions<AuthSettings> settings,
+      CancellationToken ct) =>
+    {
+      var user = await users.FindByEmailAsync(request.Email);
+
+      // Always return 200 — never reveal whether the email is registered.
+      if (user is not null && !user.IsGuest)
+      {
+        var token = await users.GeneratePasswordResetTokenAsync(user);
+        var link  = $"{settings.Value.FrontendBaseUrl.TrimEnd('/')}/reset-password" +
+                    $"?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(user.Email!)}";
+        await email.SendPasswordResetAsync(user.Email!, link, ct);
+      }
+
+      return Results.Ok(new { message = "If that email is registered you will receive a reset link shortly." });
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ForgotPasswordRequest>())
+    .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
+    .WithSummary("Request a password-reset link (sent via email / logged in dev)");
+
+    group.MapPost("/reset-password", async (
+      ResetPasswordRequest request,
+      UserManager<ApplicationUser> users,
+      CancellationToken ct) =>
+    {
+      var user = await users.FindByEmailAsync(request.Email);
+      if (user is null || user.IsGuest)
+        return Results.Problem("Invalid or expired reset link.", statusCode: StatusCodes.Status400BadRequest);
+
+      var result = await users.ResetPasswordAsync(user, request.Token, request.NewPassword);
+      if (!result.Succeeded)
+        return Results.Problem(
+          detail: result.Errors.FirstOrDefault()?.Description ?? "Invalid or expired reset link.",
+          statusCode: StatusCodes.Status400BadRequest);
+
+      return Results.NoContent();
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ResetPasswordRequest>())
+    .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status400BadRequest)
+    .WithSummary("Reset a password using the token from the forgot-password email");
 
     return routes;
   }
@@ -191,5 +319,5 @@ public static class AuthEndpoints
 
   private static AuthResponse BuildResponse(ApplicationUser user, TokenPair pair, string role) =>
     new(pair.AccessToken, pair.ExpiresInSeconds,
-      new UserInfo(user.Id, user.Email!, user.DisplayName, role, user.IsGuest));
+      new UserInfo(user.Id, user.Email!, user.DisplayName, role, user.IsGuest, user.CreatedAt));
 }

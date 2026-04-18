@@ -1,3 +1,4 @@
+using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Background;
 using DocVault.Application.Background.Queue;
@@ -78,6 +79,7 @@ public sealed class IndexingWorkerTests
             queue.Object,
             pipeline.Object,
             scopeFactory.Object,
+            new Mock<IDomainEventDispatcher>().Object,
             NullLogger<DocVault.Application.Background.IndexingWorker>.Instance);
 
         return (worker, queue, pipeline, jobRepo, docRepo);
