@@ -8,6 +8,7 @@ export interface UserInfo {
   displayName: string
   role: 'Admin' | 'User' | 'Guest'
   isGuest: boolean
+  createdAt: string
 }
 
 export interface AuthResponse {
@@ -62,5 +63,38 @@ export const authApi = {
     call<UserInfo>('/auth/me', {
       method: 'GET',
       headers: { Authorization: `Bearer ${token}` },
+    }),
+
+  updateProfile: (token: string, displayName: string) =>
+    call<void>('/auth/me', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName }),
+    }),
+
+  changePassword: (token: string, currentPassword: string, newPassword: string) =>
+    call<void>('/auth/me/password', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+
+  resetOwnPassword: (token: string, newPassword: string) =>
+    call<void>('/auth/me/reset-password', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword }),
+    }),
+
+  forgotPassword: (email: string) =>
+    call<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (email: string, token: string, newPassword: string) =>
+    call<void>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, token, newPassword }),
     }),
 }

@@ -1,20 +1,24 @@
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Email;
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Qa;
+using DocVault.Application.Abstractions.Realtime;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Background.Queue;
 using DocVault.Domain.Events;
 using DocVault.Infrastructure.Auth;
+using DocVault.Infrastructure.Email;
 using DocVault.Infrastructure.Embeddings;
 using DocVault.Infrastructure.Messaging;
 using DocVault.Infrastructure.Messaging.Handlers;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Persistence.Repositories;
 using DocVault.Infrastructure.Qa;
+using DocVault.Infrastructure.Realtime;
 using DocVault.Infrastructure.Storage;
 using DocVault.Infrastructure.Text;
 using Microsoft.AspNetCore.Identity;
@@ -63,6 +67,7 @@ public static class DependencyInjection
 
     services.Configure<AuthSettings>(configuration.GetSection(AuthSettings.Section));
     services.AddScoped<ITokenService, JwtTokenService>();
+    services.AddScoped<IEmailService, LogEmailService>();
     services.AddScoped<IdentitySeeder>();
 
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();
@@ -124,8 +129,11 @@ public static class DependencyInjection
       services.AddSingleton<IQuestionAnsweringService, FallbackQuestionAnsweringService>();
     }
 
+    services.AddSingleton<IDocumentStatusBroadcaster, DocumentStatusBroadcaster>();
     services.AddSingleton<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
     services.AddSingleton<IEventHandler<DocumentImported>, DocumentImportedHandler>();
+    services.AddSingleton<IEventHandler<DocumentIndexed>, DocumentIndexedEventHandler>();
+    services.AddSingleton<IEventHandler<DocumentFailed>, DocumentFailedEventHandler>();
     services.AddSingleton<IEventHandler<SearchExecuted>, SearchExecutedHandler>();
 
     services.AddHostedService<DatabaseInitializer>();

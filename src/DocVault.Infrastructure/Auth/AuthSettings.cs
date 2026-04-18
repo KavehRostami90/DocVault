@@ -11,6 +11,7 @@ public sealed class AuthSettings
   public int RefreshTokenExpiryDays { get; init; } = 7;
   public string AdminEmail { get; init; } = string.Empty;
   public string AdminPassword { get; init; } = string.Empty;
+  public string FrontendBaseUrl { get; init; } = "http://localhost:5173";
 
   public bool IsConfigured => !string.IsNullOrWhiteSpace(JwtSigningKey);
 }

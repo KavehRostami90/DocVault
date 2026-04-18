@@ -10,4 +10,5 @@ public sealed record UserInfo(
   string Email,
   string DisplayName,
   string Role,
-  bool IsGuest);
+  bool IsGuest,
+  DateTimeOffset CreatedAt);

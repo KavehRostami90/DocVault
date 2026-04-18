@@ -1,6 +1,7 @@
 using DocVault.Api.Composition;
 using DocVault.Api.Contracts.Admin;
 using DocVault.Api.Contracts.Common;
+using DocVault.Api.Validation;
 using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Mappers;
 using DocVault.Application.Abstractions.Auth;
@@ -87,6 +88,61 @@ public static class AdminEndpoints
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Admin: re-queue a document for indexing");
 
+    group.MapPost("/documents/bulk-delete", async (
+      BulkDocumentRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      DeleteDocumentHandler handler,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      int succeeded = 0, failed = 0;
+
+      foreach (var id in request.Ids)
+      {
+        var result = await handler.HandleAsync(
+          new DeleteDocumentCommand(new DocumentId(id), CallerId: null, IsAdmin: true), ct);
+        if (result.IsSuccess)
+        {
+          succeeded++;
+          logger.LogWarning("Admin {CallerId} deleted document {DocumentId}", caller.UserId, id);
+        }
+        else
+          failed++;
+      }
+
+      return Results.Ok(new BulkOperationResponse(succeeded, failed));
+    })
+    .Produces<BulkOperationResponse>()
+    .WithSummary("Admin: bulk delete documents");
+
+    group.MapPost("/documents/bulk-reindex", async (
+      BulkDocumentRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      ReindexDocumentHandler handler,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      int succeeded = 0, failed = 0;
+
+      foreach (var id in request.Ids)
+      {
+        var result = await handler.HandleAsync(new ReindexDocumentCommand(new DocumentId(id)), ct);
+        if (result.IsSuccess)
+        {
+          succeeded++;
+          logger.LogInformation("Admin {CallerId} re-indexed document {DocumentId}", caller.UserId, id);
+        }
+        else
+          failed++;
+      }
+
+      return Results.Ok(new BulkOperationResponse(succeeded, failed));
+    })
+    .Produces<BulkOperationResponse>()
+    .WithSummary("Admin: bulk reindex documents");
+
     group.MapGet("/documents/{id:guid}/preview", async (
       Guid id,
       GetDocumentFileHandler handler,
@@ -170,6 +226,33 @@ public static class AdminEndpoints
     .Produces(StatusCodes.Status204NoContent)
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Admin: delete a user");
+
+    group.MapPost("/users/{id}/reset-password", async (
+      string id,
+      ResetUserPasswordRequest request,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      UserManager<ApplicationUser> users,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      var user = await users.FindByIdAsync(id);
+      if (user is null) return Results.NotFound();
+
+      await users.RemovePasswordAsync(user);
+      var result = await users.AddPasswordAsync(user, request.NewPassword);
+
+      if (result.Succeeded)
+        logger.LogWarning("Admin {CallerId} set password for user {UserId} ({Email})", caller.UserId, id, user.Email);
+
+      return result.Succeeded ? Results.NoContent() : Results.Problem(
+        detail: string.Join("; ", result.Errors.Select(e => e.Description)),
+        statusCode: StatusCodes.Status422UnprocessableEntity);
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ResetUserPasswordRequest>())
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Admin: set a new password for any user");
 
     group.MapPut("/users/{id}/roles", async (
       string id,

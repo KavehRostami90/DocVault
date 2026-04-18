@@ -36,6 +36,30 @@ export default function DocumentsPage() {
   }, [page, titleFilter, statusFilter, tagFilter])
 
   useEffect(() => { load() }, [load])
+
+  // Silently poll while any visible document is still processing.
+  // Does NOT set loading state so cards don't flash to skeletons every 5 s.
+  useEffect(() => {
+    if (!data) return
+    const hasPending = data.items.some(d => d.status === 'Pending' || d.status === 'Imported')
+    if (!hasPending) return
+
+    const id = setInterval(async () => {
+      try {
+        const result = await listDocuments({
+          page, size: PAGE_SIZE,
+          title: titleFilter || undefined,
+          status: statusFilter || undefined,
+          tag: tagFilter || undefined,
+        })
+        setData(result)
+      } catch {
+        // silent — a failed background poll is not worth showing an error
+      }
+    }, 5_000)
+
+    return () => clearInterval(id)
+  }, [data, page, titleFilter, statusFilter, tagFilter])
   useEffect(() => {
     listTags()
       .then(ts => setTags(ts.map(t => t.name)))

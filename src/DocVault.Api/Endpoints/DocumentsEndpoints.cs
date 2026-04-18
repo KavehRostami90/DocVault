@@ -4,8 +4,8 @@ using DocVault.Api.Validation;
 using DocVault.Api.Mappers;
 using DocVault.Api.Middleware;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Realtime;
 using DocVault.Application.Abstractions.Storage;
-using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
 using DocVault.Application.UseCases.Documents.GetDocumentFile;
@@ -14,6 +14,7 @@ using DocVault.Application.UseCases.Documents.ListDocuments;
 using DocVault.Application.UseCases.Documents.UpdateTags;
 using DocVault.Domain.Documents;
 using Microsoft.Net.Http.Headers;
+using System.Text.Json;
 
 namespace DocVault.Api.Endpoints;
 
@@ -170,6 +171,57 @@ public static class DocumentsEndpoints
     .WithSummary("Delete a document")
     .WithDescription("Deletes a document by identifier.");
 
+    group.MapGet("/{id:guid}/status-stream", async (
+      Guid id,
+      IDocumentStatusBroadcaster broadcaster,
+      GetDocumentHandler handler,
+      ICurrentUser currentUser,
+      HttpResponse response,
+      CancellationToken ct) =>
+    {
+      // Subscribe before querying to avoid missing events due to race conditions.
+      var reader = broadcaster.Subscribe(id);
+      try
+      {
+        var outcome = await handler.HandleAsync(
+          new GetDocumentQuery(new DocumentId(id), currentUser.UserId, currentUser.IsAdmin), ct);
+
+        if (!outcome.IsSuccess || outcome.Value is null)
+        {
+          response.StatusCode = StatusCodes.Status404NotFound;
+          return;
+        }
+
+        var doc = outcome.Value;
+        response.Headers.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Append("X-Accel-Buffering", "no");
+
+        // Already in a terminal state — emit once and close.
+        if (doc.Status is DocumentStatus.Indexed or DocumentStatus.Failed)
+        {
+          await WriteSseEventAsync(response, doc.Id.Value, doc.Status, doc.IndexingError, ct);
+          return;
+        }
+
+        await foreach (var evt in reader.ReadAllAsync(ct))
+        {
+          await WriteSseEventAsync(response, evt.DocumentId, evt.Status, evt.Error, ct);
+          if (evt.Status is DocumentStatus.Indexed or DocumentStatus.Failed) break;
+        }
+      }
+      catch (OperationCanceledException) { /* client disconnected */ }
+      finally
+      {
+        // Unsubscribe completes the channel writer so ReadAllAsync terminates cleanly.
+        broadcaster.Unsubscribe(id, reader);
+      }
+    })
+    .Produces(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Stream document status")
+    .WithDescription("SSE stream that emits a status event when the document transitions to Indexed or Failed. Completes immediately if the document is already in a terminal state.");
+
     group.MapGet("/{id:guid}/extracted-text", async (
       Guid id,
       bool download,
@@ -205,5 +257,13 @@ public static class DocumentsEndpoints
     .WithDescription("Returns the OCR-extracted or parsed text content of a document as plain text. Pass ?download=true to receive a .txt file attachment.");
 
     return routes;
+  }
+
+  private static async Task WriteSseEventAsync(
+    HttpResponse response, Guid documentId, DocumentStatus status, string? error, CancellationToken ct)
+  {
+    var json = JsonSerializer.Serialize(new { documentId, status = status.ToString(), error });
+    await response.WriteAsync($"data: {json}\n\n", ct);
+    await response.Body.FlushAsync(ct);
   }
 }

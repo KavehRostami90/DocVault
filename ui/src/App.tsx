@@ -10,6 +10,9 @@ import DocumentsPage from './pages/DocumentsPage'
 import DocumentDetailPage from './pages/DocumentDetailPage'
 import SearchPage from './pages/SearchPage'
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
+import ProfilePage from './pages/ProfilePage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 export default function App() {
   return (
@@ -20,6 +23,8 @@ export default function App() {
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Protected app shell */}
             <Route
@@ -34,6 +39,7 @@ export default function App() {
               <Route path="documents" element={<DocumentsPage />} />
               <Route path="documents/:id" element={<DocumentDetailPage />} />
               <Route path="search" element={<SearchPage />} />
+              <Route path="profile" element={<ProfilePage />} />
 
               {/* Admin-only */}
               <Route
