@@ -22,7 +22,6 @@
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Pgvector" />
     <PackageReference Include="Pgvector.EntityFrameworkCore" />
-    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DocVault.Domain\DocVault.Domain.csproj" />
