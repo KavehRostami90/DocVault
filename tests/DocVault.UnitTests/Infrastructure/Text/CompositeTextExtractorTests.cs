@@ -1,5 +1,6 @@
 using DocVault.Application.Abstractions.Text;
 using DocVault.Infrastructure.Text;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -17,7 +18,9 @@ public sealed class CompositeTextExtractorTests
         var mockEngine = new Mock<IOcrEngine>();
         mockEngine.Setup(e => e.RecognizeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
                   .ReturnsAsync(ocrResult);
-        return new CompositeTextExtractor(new ImageOcrExtractor(mockEngine.Object));
+        return new CompositeTextExtractor(
+            new ImageOcrExtractor(mockEngine.Object),
+            new PdfOcrExtractor(mockEngine.Object, NullLogger<PdfOcrExtractor>.Instance));
     }
 
     private static MemoryStream TextStream(string text = "hello")
@@ -54,7 +57,9 @@ public sealed class CompositeTextExtractorTests
         mockEngine.Setup(e => e.RecognizeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
                   .ReturnsAsync("extracted via ocr");
 
-        var sut = new CompositeTextExtractor(new ImageOcrExtractor(mockEngine.Object));
+        var sut = new CompositeTextExtractor(
+            new ImageOcrExtractor(mockEngine.Object),
+            new PdfOcrExtractor(mockEngine.Object, NullLogger<PdfOcrExtractor>.Instance));
 
         using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
         var result = await sut.ExtractAsync(stream, contentType);
@@ -73,7 +78,9 @@ public sealed class CompositeTextExtractorTests
         mockEngine.Setup(e => e.RecognizeAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
                   .ReturnsAsync("ocr result");
 
-        var sut = new CompositeTextExtractor(new ImageOcrExtractor(mockEngine.Object));
+        var sut = new CompositeTextExtractor(
+            new ImageOcrExtractor(mockEngine.Object),
+            new PdfOcrExtractor(mockEngine.Object, NullLogger<PdfOcrExtractor>.Instance));
 
         using var stream = new MemoryStream(new byte[] { 1, 2, 3 });
         var result = await sut.ExtractAsync(stream, contentType);
