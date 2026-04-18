@@ -9,7 +9,7 @@ namespace DocVault.Infrastructure.Text;
 /// <remarks>
 /// Supported content-type mappings:
 /// <list type="bullet">
-///   <item><c>application/pdf</c> → <see cref="PdfTextExtractor"/></item>
+///   <item><c>application/pdf</c> → <see cref="PdfOcrExtractor"/> (text layer first, OCR fallback for image-only pages)</item>
 ///   <item><c>application/vnd.openxmlformats-officedocument.wordprocessingml.document</c> → <see cref="DocxTextExtractor"/></item>
 ///   <item><c>text/markdown</c>, <c>text/x-markdown</c> → <see cref="MarkdownExtractor"/></item>
 ///   <item><c>image/png</c>, <c>image/jpeg</c>, <c>image/gif</c>, <c>image/tiff</c>, <c>image/bmp</c>, <c>image/webp</c> → <see cref="ImageOcrExtractor"/></item>
@@ -26,7 +26,6 @@ public sealed class CompositeTextExtractor : ITextExtractor
 
   private static readonly Dictionary<string, ITextExtractor> _staticExtractors = new(StringComparer.OrdinalIgnoreCase)
   {
-    ["application/pdf"] = new PdfTextExtractor(),
     ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = new DocxTextExtractor(),
     ["text/markdown"] = new MarkdownExtractor(),
     ["text/x-markdown"] = new MarkdownExtractor(),
@@ -36,18 +35,26 @@ public sealed class CompositeTextExtractor : ITextExtractor
   private static readonly ITextExtractor _fallback = new PlainTextExtractor();
 
   private readonly ImageOcrExtractor _imageExtractor;
+  private readonly PdfOcrExtractor _pdfExtractor;
 
-  public CompositeTextExtractor(ImageOcrExtractor imageExtractor)
-    => _imageExtractor = imageExtractor;
+  public CompositeTextExtractor(ImageOcrExtractor imageExtractor, PdfOcrExtractor pdfExtractor)
+  {
+    _imageExtractor = imageExtractor;
+    _pdfExtractor = pdfExtractor;
+  }
 
   /// <summary>
   /// Selects an extractor by <paramref name="contentType"/> and delegates extraction to it.
+  /// PDFs are routed to <see cref="PdfOcrExtractor"/> (text layer first, OCR fallback).
   /// Image types are routed to <see cref="ImageOcrExtractor"/>.
   /// Falls back to <see cref="PlainTextExtractor"/> for unrecognised types.
   /// </summary>
   public Task<string> ExtractAsync(Stream content, string contentType, CancellationToken cancellationToken = default)
   {
     var ct = contentType?.Trim() ?? string.Empty;
+
+    if (ct.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+      return _pdfExtractor.ExtractAsync(content, ct, cancellationToken);
 
     if (_imageTypes.Contains(ct))
       return _imageExtractor.ExtractAsync(content, ct, cancellationToken);

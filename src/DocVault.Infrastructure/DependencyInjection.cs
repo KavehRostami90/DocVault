@@ -105,6 +105,7 @@ public static class DependencyInjection
     services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.Section));
     services.AddSingleton<IOcrEngine, CliTesseractOcrEngine>();
     services.AddSingleton<ImageOcrExtractor>();
+    services.AddSingleton<PdfOcrExtractor>();
     services.AddSingleton<ITextExtractor, CompositeTextExtractor>();
 
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
