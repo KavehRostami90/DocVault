@@ -12,13 +12,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy to Test Environment
+  build-push:
+    name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    environment: test
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
+
+    permissions:
+      contents: read
+
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: >-
+            ${{
+              github.event_name == 'workflow_dispatch'
+              && github.sha
+              || github.event.workflow_run.head_sha
+            }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/docvault
+          tags: |
+            type=sha,prefix=sha-,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    name: Deploy to Test Environment
+    runs-on: ubuntu-latest
+    needs: build-push
+    environment: test
 
     permissions:
       id-token: write
@@ -33,28 +78,6 @@ jobs:
               && github.sha
               || github.event.workflow_run.head_sha
             }}
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Packages.props') }}
-          restore-keys: nuget-
-
-      - name: Publish API
-        run: |
-          dotnet publish src/DocVault.Api/DocVault.Api.csproj \
-            -c Release \
-            -o ./publish \
-            /p:UseAppHost=false
-
-      - name: Zip publish output
-        run: cd publish && zip -r ../app.zip .
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -77,16 +100,10 @@ jobs:
               corsAllowedOrigins="${{ vars.CORS_ALLOWED_ORIGINS }}" \
               jwtSigningKey="${{ secrets.AUTH_JWT_SIGNING_KEY }}" \
               adminEmail="${{ vars.AUTH_ADMIN_EMAIL }}" \
-              adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}"
-
-      - name: Deploy API to Web App
-        run: |
-          az webapp deploy \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ vars.API_APP_NAME }} \
-            --src-path app.zip \
-            --type zip \
-            --async false
+              adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}" \
+              containerImage="ghcr.io/${{ github.repository_owner }}/docvault:${{ needs.build-push.outputs.version }}" \
+              ghcrUsername="${{ github.actor }}" \
+              ghcrToken="${{ secrets.GHCR_TOKEN }}"
 
       - name: Deploy UI to Static Web App
         uses: Azure/static-web-apps-deploy@v1

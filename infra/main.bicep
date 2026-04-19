@@ -30,22 +30,35 @@ param adminEmail string = 'admin@docvault.local'
 @secure()
 param adminPassword string
 
+@description('Full container image reference (e.g. ghcr.io/owner/docvault:sha-abc1234).')
+param containerImage string
+
+@description('GHCR username for pulling the container image.')
+param ghcrUsername string
+
+@description('GHCR token (PAT with read:packages) for pulling the container image.')
+@secure()
+param ghcrToken string
+
 // ── App Settings ───────────────────────────────────────────────────────────
 
 var baseAppSettings = [
-  { name: 'ASPNETCORE_ENVIRONMENT',      value: 'Production' }
-  { name: 'ASPNETCORE_URLS',             value: 'http://+:8080' }
-  { name: 'ConnectionStrings__Database', value: databaseConnectionString }
-  { name: 'Cors__AllowedOrigins',        value: corsAllowedOrigins }
-  { name: 'Auth__JwtSigningKey',         value: jwtSigningKey }
-  { name: 'Auth__JwtIssuer',             value: 'docvault' }
-  { name: 'Auth__JwtAudience',           value: 'docvault-ui' }
+  { name: 'ASPNETCORE_ENVIRONMENT',         value: 'Production' }
+  { name: 'ASPNETCORE_URLS',                value: 'http://+:8080' }
+  { name: 'ConnectionStrings__Database',    value: databaseConnectionString }
+  { name: 'Cors__AllowedOrigins',           value: corsAllowedOrigins }
+  { name: 'Auth__JwtSigningKey',            value: jwtSigningKey }
+  { name: 'Auth__JwtIssuer',               value: 'docvault' }
+  { name: 'Auth__JwtAudience',             value: 'docvault-ui' }
   { name: 'Auth__AccessTokenExpiryMinutes', value: '15' }
   { name: 'Auth__RefreshTokenExpiryDays',   value: '7' }
-  { name: 'Auth__AdminEmail',            value: adminEmail }
-  { name: 'Auth__AdminPassword',         value: adminPassword }
-  { name: 'OpenAI__Model',               value: 'text-embedding-3-small' }
-  { name: 'OpenAI__Dimensions',          value: '768' }
+  { name: 'Auth__AdminEmail',              value: adminEmail }
+  { name: 'Auth__AdminPassword',           value: adminPassword }
+  { name: 'OpenAI__Model',                 value: 'text-embedding-3-small' }
+  { name: 'OpenAI__Dimensions',            value: '768' }
+  { name: 'DOCKER_REGISTRY_SERVER_URL',      value: 'https://ghcr.io' }
+  { name: 'DOCKER_REGISTRY_SERVER_USERNAME', value: ghcrUsername }
+  { name: 'DOCKER_REGISTRY_SERVER_PASSWORD', value: ghcrToken }
 ]
 
 var allAppSettings = !empty(openAiApiKey)
@@ -53,7 +66,6 @@ var allAppSettings = !empty(openAiApiKey)
   : baseAppSettings
 
 // ── App Service Plan ───────────────────────────────────────────────────────
-// F1 (Free) has no "Always On" — upgrade to B1 for production workloads.
 
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${appName}-plan'
@@ -73,13 +85,12 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
 resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
   location: location
-  kind: 'app,linux'
+  kind: 'app,linux,container'
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'DOTNETCORE|10.0'
-      appCommandLine: 'dotnet DocVault.Api.dll'
+      linuxFxVersion: 'DOCKER|${containerImage}'
       healthCheckPath: '/health/live'
       appSettings: allAppSettings
     }
