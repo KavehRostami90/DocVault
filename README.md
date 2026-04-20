@@ -693,11 +693,11 @@ Search uses a chain-of-responsibility pattern. The first strategy whose `CanHand
 
 If Ollama is unreachable when a search query arrives, `IEmbeddingProvider` throws and `SearchDocumentsHandler` catches it — setting `queryVector = null` and falling through to the next strategy automatically.
 
-### Chunk-level indexing (Phase 1 — complete)
+### Chunk-level indexing
 
 The `DocumentChunks` table stores one embedding per text window instead of one per document. Each chunk carries its `StartChar`/`EndChar` offsets back into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks.Embedding` column has its own HNSW index.
 
-### Hybrid search (Phase 2 — complete)
+### Hybrid search
 
 `PgvectorSearchStrategy` now queries `DocumentChunks` directly — it groups by document and picks the single closest chunk per document using a `ROW_NUMBER() OVER (PARTITION BY DocumentId ORDER BY distance)` CTE, then joins back to `Documents` for ownership filtering.
 
