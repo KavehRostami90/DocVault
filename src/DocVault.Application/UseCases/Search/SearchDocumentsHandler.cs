@@ -43,7 +43,13 @@ public sealed partial class SearchDocumentsHandler
     }
 
     var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, ownerId, queryVector, cancellationToken);
-    return Result<SearchPageResult>.Success(new SearchPageResult(page, UsedSemanticSearch: queryVector is not null));
+
+    var hasTerms = query.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 0;
+    var mode = queryVector is null ? SearchMode.Keyword
+             : hasTerms           ? SearchMode.Hybrid
+             :                      SearchMode.Semantic;
+
+    return Result<SearchPageResult>.Success(new SearchPageResult(page, mode));
   }
 
   [LoggerMessage(Level = LogLevel.Warning,

@@ -33,7 +33,7 @@ public static class SearchEndpoints
 
       var searchResult = result.Value;
       var items = searchResult.Page.Items.Select(ToResponse).ToList();
-      httpContext.Response.Headers.Append("X-Search-Mode", searchResult.UsedSemanticSearch ? "semantic" : "keyword");
+      httpContext.Response.Headers.Append("X-Search-Mode", searchResult.Mode.ToString().ToLowerInvariant());
       return Results.Ok(new PageResponse<SearchResultItemResponse>(items, request.Page, request.Size, searchResult.Page.TotalCount));
     })
     .RequireRateLimiting(RateLimitPolicies.Search)
@@ -49,8 +49,10 @@ public static class SearchEndpoints
 
   private static SearchResultItemResponse ToResponse(SearchResultItem item)
   {
-    var raw     = item.Document.Text ?? string.Empty;
-    var plain   = HtmlTagPattern.Replace(raw, string.Empty);
+    // Prefer the matched chunk text — it's the semantically relevant portion.
+    // Fall back to the beginning of the full document text when no chunk is available.
+    var raw     = item.MatchedChunkText ?? item.Document.Text ?? string.Empty;
+    var plain   = HtmlTagPattern.Replace(raw, string.Empty).Trim();
     var snippet = plain[..Math.Min(plain.Length, 120)];
     return new(item.Document.Id.Value, item.Document.Title, snippet, item.Score);
   }

@@ -23,10 +23,13 @@ public class EfDocumentRepository : IDocumentRepository
     _filterRegistry = DocumentFilterRegistry.Build();
 
   // Strategies are tried in order; the first whose CanHandle returns true wins.
-  // PgvectorSearchStrategy handles relational + embedding; PostgresSearchStrategy handles relational FTS fallback.
+  // HybridSearchStrategy: relational + vector (RRF fusion when terms present, chunk-semantic otherwise).
+  // PgvectorSearchStrategy: relational + vector, no terms (pure semantic, lower priority than Hybrid).
+  // PostgresSearchStrategy: relational FTS keyword fallback.
+  // InMemorySearchStrategy: always-matches fallback for non-relational providers (tests).
   private static readonly IReadOnlyList<IDocumentSearchStrategy> _searchStrategies =
   [
-    new PgvectorSearchStrategy(),
+    new HybridSearchStrategy(),
     new PostgresSearchStrategy(),
     new InMemorySearchStrategy(),
   ];

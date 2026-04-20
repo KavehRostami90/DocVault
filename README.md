@@ -684,17 +684,24 @@ Search uses a chain-of-responsibility pattern. The first strategy whose `CanHand
 
 | Strategy | Activated when | Method |
 |---|---|---|
-| `PgvectorSearchStrategy` | PostgreSQL + embedding available | Cosine similarity `<=>` on `Documents.Embedding` via HNSW index |
+| `HybridSearchStrategy` | PostgreSQL + embedding + text terms present | Chunk-level cosine similarity on `DocumentChunks` fused with `tsvector` FTS via Reciprocal Rank Fusion (RRF, K=60); top-50 candidates per source |
+| `PgvectorSearchStrategy` | PostgreSQL + embedding available (no text terms) | Chunk-level cosine similarity `<=>` on `DocumentChunks` — best chunk per document via `ROW_NUMBER() OVER PARTITION BY` |
 | `PostgresSearchStrategy` | PostgreSQL, no embedding | `tsvector` full-text with `ts_rank` |
 | `InMemorySearchStrategy` | In-memory DB (tests) | LINQ `Contains` keyword match |
+
+`SearchDocumentsHandler` exposes the active strategy as a `SearchMode` enum value (`Semantic`, `Keyword`, or `Hybrid`) in the response.
 
 If Ollama is unreachable when a search query arrives, `IEmbeddingProvider` throws and `SearchDocumentsHandler` catches it — setting `queryVector = null` and falling through to the next strategy automatically.
 
 ### Chunk-level indexing (Phase 1 — complete)
 
-The `DocumentChunks` table now stores one embedding per text window instead of one per document. Each chunk carries its `StartChar`/`EndChar` offsets back into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks.Embedding` column has its own HNSW index.
+The `DocumentChunks` table stores one embedding per text window instead of one per document. Each chunk carries its `StartChar`/`EndChar` offsets back into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks.Embedding` column has its own HNSW index.
 
-The next phase (Phase 2) will upgrade `PgvectorSearchStrategy` to query `DocumentChunks` directly — grouping by document and taking the best distance per document — and introduce a `HybridSearchStrategy` that fuses vector and full-text rankings with Reciprocal Rank Fusion (RRF).
+### Hybrid search (Phase 2 — complete)
+
+`PgvectorSearchStrategy` now queries `DocumentChunks` directly — it groups by document and picks the single closest chunk per document using a `ROW_NUMBER() OVER (PARTITION BY DocumentId ORDER BY distance)` CTE, then joins back to `Documents` for ownership filtering.
+
+`HybridSearchStrategy` fuses chunk-level vector similarity and PostgreSQL full-text search rankings using **Reciprocal Rank Fusion (RRF, K=60)**. It collects the top-50 vector candidates (best chunk per document) and the top-50 FTS candidates, then scores each document as `rrf = 1/(60 + vec_rank) + 1/(60 + fts_rank)`. Documents that appear in only one list still receive a partial score. The hybrid strategy takes priority over the pure-vector strategy whenever both an embedding and at least one text term are present.
 
 ---
 
