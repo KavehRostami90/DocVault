@@ -1,5 +1,6 @@
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
+using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Background;
 using DocVault.Application.Background.Queue;
 using DocVault.Application.Pipeline;
@@ -61,10 +62,17 @@ public sealed class IndexingWorkerTests
         configureJobRepo?.Invoke(jobRepo);
         configureDocRepo?.Invoke(docRepo);
 
-        // ServiceProvider that resolves the two repos
+        // ServiceProvider that resolves the two repos + chunk repo
+        var chunkRepo = new Mock<IDocumentChunkRepository>();
+        chunkRepo.Setup(r => r.ReplaceAsync(It.IsAny<DocumentId>(),
+                                            It.IsAny<IReadOnlyList<DocumentChunk>>(),
+                                            It.IsAny<CancellationToken>()))
+                 .Returns(Task.CompletedTask);
+
         var services = new ServiceCollection();
         services.AddSingleton(jobRepo.Object);
         services.AddSingleton(docRepo.Object);
+        services.AddSingleton(chunkRepo.Object);
         var sp = services.BuildServiceProvider();
 
         var scopeFactory = new Mock<IServiceScopeFactory>();
@@ -125,8 +133,10 @@ public sealed class IndexingWorkerTests
             docRepo => docRepo.Setup(r => r.GetAsync(documentId, It.IsAny<CancellationToken>()))
                               .ReturnsAsync(document));
 
+        var fakeChunk = new TextChunk(0, "extracted text content", 0, "extracted text content".Length);
         pipeline.Setup(p => p.RunAsync(workItem.StoragePath, workItem.ContentType, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new IngestionResult("extracted text content", new float[128]));
+                .ReturnsAsync(new IngestionResult("extracted text content",
+                    [new ChunkEmbedding(fakeChunk, new float[128])]));
 
         // Signal when we know processing is done (doc is updated)
         var processingDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -168,9 +178,9 @@ public sealed class IndexingWorkerTests
             docRepo => docRepo.Setup(r => r.GetAsync(documentId, It.IsAny<CancellationToken>()))
                               .ReturnsAsync(document));
 
-        // Pipeline returns empty text (e.g. OCR produced no output) with null embedding
+        // Pipeline returns empty text (e.g. OCR produced no output) — no chunks
         pipeline.Setup(p => p.RunAsync(workItem.StoragePath, workItem.ContentType, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new IngestionResult(string.Empty, null));
+                .ReturnsAsync(new IngestionResult(string.Empty, []));
 
         var processingDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         docRepo.Setup(r => r.UpdateAsync(It.IsAny<Document>(), It.IsAny<CancellationToken>()))
