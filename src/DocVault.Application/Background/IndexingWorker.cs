@@ -2,6 +2,7 @@ using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Background.Queue;
 using DocVault.Application.Pipeline;
+using DocVault.Domain.Documents;
 using DocVault.Domain.Imports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -122,8 +123,30 @@ public sealed partial class IndexingWorker : BackgroundService
       if (document is not null)
       {
         document.AttachText(result.Text);
-        if (result.Embedding is not null)
-          document.AttachEmbedding(result.Embedding);
+
+        if (result.Chunks.Count > 0)
+        {
+          // Keep document-level embedding in sync (first chunk) so the existing
+          // PgvectorSearchStrategy continues to work until Phase 2 upgrades it.
+          document.AttachEmbedding(result.Chunks[0].Embedding);
+
+          var chunkRepository = scope.ServiceProvider.GetRequiredService<IDocumentChunkRepository>();
+          var domainChunks = result.Chunks
+            .Select(ce =>
+            {
+              var c = DocumentChunk.Create(
+                document.Id,
+                ce.Chunk.Index,
+                ce.Chunk.Text,
+                ce.Chunk.StartChar,
+                ce.Chunk.EndChar);
+              c.AttachEmbedding(ce.Embedding);
+              return c;
+            })
+            .ToList();
+          await chunkRepository.ReplaceAsync(document.Id, domainChunks, ct);
+        }
+
         document.MarkIndexed();
         await documentRepository.UpdateAsync(document, ct);
         await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);

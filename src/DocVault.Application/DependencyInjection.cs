@@ -44,6 +44,7 @@ public static class DependencyInjection
 
     services.AddSingleton<FileReadStage>();
     services.AddSingleton<TextExtractStage>();
+    services.AddSingleton<ChunkingStage>();
     services.AddSingleton<EmbeddingStage>();
     services.AddSingleton<IndexStage>();
     services.AddSingleton(_ => DefaultHooks.Empty);

@@ -7,6 +7,7 @@ using DocVault.Application.Abstractions.Qa;
 using DocVault.Application.Abstractions.Realtime;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
+using DocVault.Infrastructure.Text;
 using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Background.Queue;
 using DocVault.Domain.Events;
@@ -20,13 +21,11 @@ using DocVault.Infrastructure.Persistence.Repositories;
 using DocVault.Infrastructure.Qa;
 using DocVault.Infrastructure.Realtime;
 using DocVault.Infrastructure.Storage;
-using DocVault.Infrastructure.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Pgvector.EntityFrameworkCore;
 
 namespace DocVault.Infrastructure;
 
@@ -71,6 +70,7 @@ public static class DependencyInjection
     services.AddScoped<IdentitySeeder>();
 
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();
+    services.AddScoped<IDocumentChunkRepository, EfDocumentChunkRepository>();
     services.AddScoped<ITagRepository, EfTagRepository>();
     services.AddScoped<IImportJobRepository, EfImportJobRepository>();
     services.AddScoped<IUnitOfWork, EfUnitOfWork>();
@@ -101,6 +101,8 @@ public static class DependencyInjection
         return new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage"));
       });
     }
+
+    services.AddSingleton<ITextChunker, SimpleTextChunker>();
 
     services.Configure<OcrOptions>(configuration.GetSection(OcrOptions.Section));
     services.AddSingleton<IOcrEngine, CliTesseractOcrEngine>();

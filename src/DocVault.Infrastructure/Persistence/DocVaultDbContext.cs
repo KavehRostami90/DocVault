@@ -14,6 +14,7 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
   public DocVaultDbContext(DbContextOptions options) : base(options) { }
 
   public DbSet<Document> Documents => Set<Document>();
+  public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
   public DbSet<Tag> Tags => Set<Tag>();
   public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
   public DbSet<IndexingQueueEntry> IndexingQueue => Set<IndexingQueueEntry>();
@@ -58,6 +59,19 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
 
       modelBuilder.Entity<Document>()
         .HasIndex(d => d.Embedding)
+        .HasMethod("hnsw")
+        .HasOperators("vector_cosine_ops");
+
+      // DocumentChunk: pgvector column and HNSW index for chunk-level semantic search.
+      modelBuilder.Entity<DocumentChunk>()
+        .Property(c => c.Embedding)
+        .HasConversion(
+          v => v != null ? new Vector(v) : null,
+          v => v != null ? v.Memory.ToArray() : null)
+        .HasColumnType("vector(768)");
+
+      modelBuilder.Entity<DocumentChunk>()
+        .HasIndex(c => c.Embedding)
         .HasMethod("hnsw")
         .HasOperators("vector_cosine_ops");
     }

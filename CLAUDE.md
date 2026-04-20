@@ -134,6 +134,7 @@ DocVault.Shared       → nothing                      (cross-cutting utilities 
 ### Domain Layer
 
 - **Aggregates**: `Document` (root), `ImportJob` (root), `Tag` (entity)
+- **Entities**: `DocumentChunk` — one per text window produced during ingestion; holds `ChunkIndex`, `Text`, `Embedding`, `StartChar`, `EndChar`, and a `DocumentId` FK
 - **Value objects**: `DocumentId`, `FileHash`, `DocumentStatus`, `RelevanceScore`
 - **Domain events**: `DocumentImported`, `DocumentIndexed`, `SearchExecuted`
 - **`ValidationConstants`** — single source of truth for all validation limits (title length, file size, tag count, query length). **Never hard-code these values anywhere else.**
@@ -146,7 +147,9 @@ Orchestrates use cases with no web or EF dependencies. Key abstractions:
 | Interface | Dev Implementation | Production Path |
 |---|---|---|
 | `IFileStorage` | `LocalFileStorage` (`{id}.bin`) | Azure Blob / S3 / MinIO |
-| `IEmbeddingProvider` | `FakeEmbeddingProvider` (FNV-1a hash) | OpenAI / Azure OpenAI |
+| `IEmbeddingProvider` | `FakeEmbeddingProvider` (FNV-1a hash, 768-dim) | OpenAI / Azure OpenAI |
+| `ITextChunker` | `SimpleTextChunker` (400-word windows, 80-word overlap) | swap for token-aware or semantic chunker |
+| `IDocumentChunkRepository` | `EfDocumentChunkRepository` | same — EF Core with pgvector |
 | `IWorkQueue<T>` | `ChannelWorkQueue<T>` (in-memory) | `PostgresWorkQueue` (SKIP LOCKED) |
 | `ITextExtractor` | `PlainTextExtractor` + `MarkdownExtractor` | pluggable registry |
 | `IDomainEventDispatcher` | `InProcessDomainEventDispatcher` | RabbitMQ / Event Hub |
@@ -159,11 +162,15 @@ CQRS handlers: `ImportDocumentHandler`, `DeleteDocumentHandler`, `UpdateTagsHand
 POST /documents/import
   → ImportDocumentHandler: hash file, store binary, create Document (Imported), create ImportJob (Pending), enqueue work item
   → IndexingWorker (BackgroundService): dequeue → ImportJob (InProgress) → IngestionPipeline:
-      FileReadStage → TextExtractStage → EmbeddingStage → IndexStage
-    → Document.AttachText() + Document.MarkIndexed() → ImportJob (Completed or Failed)
+      FileReadStage → TextExtractStage → ChunkingStage → EmbeddingStage (per chunk) → IndexStage
+    → IDocumentChunkRepository.ReplaceAsync() — persist chunk embeddings (delete-then-insert, idempotent)
+    → Document.AttachText() + Document.AttachEmbedding(firstChunk) + Document.MarkIndexed()
+    → ImportJob (Completed or Failed)
 ```
 
 On startup, `IndexingWorker` recovers any `Pending`/`InProgress` jobs from the DB (crash recovery).
+
+**Chunk shape:** `DocumentChunk` records carry `StartChar`/`EndChar` offsets into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks` table has an HNSW index on the `Embedding vector(768)` column for efficient cosine similarity queries.
 
 ### API Layer
 

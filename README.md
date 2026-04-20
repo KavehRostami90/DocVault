@@ -413,7 +413,8 @@ dotnet ef database update \
 ## Features
 
 - **Upload & store** — multipart file upload with SHA-256 deduplication; supports PDF, DOCX, Markdown, plain text, and images
-- **Background indexing** — an async `BackgroundService` worker extracts text, runs OCR on images, and generates vector embeddings; crash-safe with startup recovery
+- **Background indexing** — an async `BackgroundService` worker extracts text, runs OCR on images, chunks the content into overlapping windows, and generates a vector embedding per chunk; crash-safe with startup recovery
+- **Chunk-level vector indexing** — document text is split into 400-word overlapping chunks (80-word overlap); each chunk is independently embedded and stored in the `DocumentChunks` table with an HNSW index — enabling precise retrieval from long documents where a single document-level embedding would dilute the signal
 - **Semantic search** — pgvector cosine similarity search when Ollama is available; automatically falls back to PostgreSQL full-text (`tsvector`) or in-memory keyword search
 - **AI question answering** — RAG pipeline over your documents: retrieves relevant chunks, scores them with a hybrid semantic + lexical approach, and sends them to an LLM for a grounded answer with citations
 - **Realtime status** — Server-Sent Events (SSE) stream per document so the UI updates live as indexing progresses
@@ -666,9 +667,11 @@ BackgroundService → IndexingWorker
        ├─ IngestionPipeline:
        │    ├─ FileReadStage      — read bytes from IFileStorage
        │    ├─ TextExtractStage   — PDF / DOCX / Markdown / OCR / plain text
-       │    ├─ EmbeddingStage     — float[] via IEmbeddingProvider
-       │    └─ IndexStage         — persist text + embedding to DB
-       ├─ Document.AttachText() + Document.MarkIndexed()
+       │    ├─ ChunkingStage      — split text into 400-word overlapping windows (ITextChunker)
+       │    ├─ EmbeddingStage     — float[] per chunk via IEmbeddingProvider
+       │    └─ IndexStage         — extensible hook (no-op by default; override for external indexes)
+       ├─ DocumentChunks persisted via IDocumentChunkRepository (replace-on-reindex)
+       ├─ Document.AttachText() + Document.AttachEmbedding() + Document.MarkIndexed()
        ├─ ImportJob → Completed
        └─ IDocumentStatusBroadcaster.Publish() → SSE clients notified
 ```
@@ -681,11 +684,17 @@ Search uses a chain-of-responsibility pattern. The first strategy whose `CanHand
 
 | Strategy | Activated when | Method |
 |---|---|---|
-| `PgvectorSearchStrategy` | PostgreSQL + embedding available | Cosine similarity `<=>` via pgvector HNSW index |
+| `PgvectorSearchStrategy` | PostgreSQL + embedding available | Cosine similarity `<=>` on `Documents.Embedding` via HNSW index |
 | `PostgresSearchStrategy` | PostgreSQL, no embedding | `tsvector` full-text with `ts_rank` |
 | `InMemorySearchStrategy` | In-memory DB (tests) | LINQ `Contains` keyword match |
 
 If Ollama is unreachable when a search query arrives, `IEmbeddingProvider` throws and `SearchDocumentsHandler` catches it — setting `queryVector = null` and falling through to the next strategy automatically.
+
+### Chunk-level indexing (Phase 1 — complete)
+
+The `DocumentChunks` table now stores one embedding per text window instead of one per document. Each chunk carries its `StartChar`/`EndChar` offsets back into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks.Embedding` column has its own HNSW index.
+
+The next phase (Phase 2) will upgrade `PgvectorSearchStrategy` to query `DocumentChunks` directly — grouping by document and taking the best distance per document — and introduce a `HybridSearchStrategy` that fuses vector and full-text rankings with Reciprocal Rank Fusion (RRF).
 
 ---
 
@@ -834,9 +843,12 @@ DocVault/
 │   │   ├── Email/                 # LogEmailService (swap for real SMTP)
 │   │   ├── Embeddings/            # OpenAiEmbeddingProvider, FakeEmbeddingProvider
 │   │   ├── Persistence/           # EF Core DbContext, repositories, migrations
+│   │   │   ├── Configurations/    # DocumentConfiguration, DocumentChunkConfiguration, …
+│   │   │   ├── Migrations/        # EF Core migrations (including AddDocumentChunks)
+│   │   │   └── Repositories/      # EfDocumentRepository, EfDocumentChunkRepository, search strategies
 │   │   ├── Realtime/              # DocumentStatusBroadcaster (SSE)
 │   │   ├── Storage/               # LocalFileStorage, AzureBlobFileStorage
-│   │   ├── Text/                  # CompositeTextExtractor + format extractors
+│   │   ├── Text/                  # CompositeTextExtractor + format extractors + SimpleTextChunker
 │   │   └── Qa/                    # OpenAiQuestionAnsweringService
 │   └── DocVault.Shared/           # Cross-cutting utilities placeholder
 ├── tests/
