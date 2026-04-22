@@ -17,8 +17,8 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
 {
   private const double DistanceThreshold = 0.7;
 
-  public bool CanHandle(DocVaultDbContext db, float[]? queryVector) =>
-    db.Database.IsRelational() && queryVector is not null;
+  public bool CanHandle(DocVaultDbContext db, float[]? queryVector, string[] terms) =>
+    db.Database.IsRelational() && queryVector is not null && terms.Length == 0;
 
   public async Task<Page<SearchResultItem>> SearchAsync(
     DocVaultDbContext db,

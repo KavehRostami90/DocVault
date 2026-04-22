@@ -29,9 +29,10 @@ public sealed class DeleteDocumentHandlerTests
        private static (DeleteDocumentHandler Handler, Mock<IDocumentRepository> Repo, Mock<IFileStorage> Storage)
     BuildHandler(Document? toReturn = null)
     {
+    var uiw = new Mock<IUnitOfWork>();
         var repo    = new Mock<IDocumentRepository>();
         var storage = new Mock<IFileStorage>();
-        var handler = new DeleteDocumentHandler(repo.Object, storage.Object);
+        var handler = new DeleteDocumentHandler(repo.Object, storage.Object, uiw.Object);
 
         repo.Setup(r => r.GetAsync(It.IsAny<DocumentId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((DocumentId id, CancellationToken _) =>

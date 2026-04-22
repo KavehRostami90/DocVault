@@ -25,7 +25,7 @@ public sealed class JwtTokenService : ITokenService
 
   public async Task<TokenPair> CreateTokenPairAsync(
     string userId, string email, string displayName,
-    IList<string> roles, bool isGuest,
+    IReadOnlyList<string> roles, bool isGuest,
     CancellationToken ct = default)
   {
     var accessToken = BuildAccessToken(userId, email, displayName, roles, isGuest);
@@ -58,7 +58,7 @@ public sealed class JwtTokenService : ITokenService
     if (user is null)
       return null;
 
-    var roles = await _users.GetRolesAsync(user);
+    var roles = (IReadOnlyList<string>)await _users.GetRolesAsync(user);
     return await CreateTokenPairAsync(user.Id, user.Email!, user.DisplayName, roles, user.IsGuest, ct);
   }
 
@@ -72,7 +72,7 @@ public sealed class JwtTokenService : ITokenService
     }
   }
 
-  private string BuildAccessToken(string userId, string email, string displayName, IList<string> roles, bool isGuest)
+  private string BuildAccessToken(string userId, string email, string displayName, IReadOnlyList<string> roles, bool isGuest)
   {
     var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.JwtSigningKey));
     var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

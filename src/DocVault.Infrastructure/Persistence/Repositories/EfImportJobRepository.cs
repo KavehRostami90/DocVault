@@ -24,10 +24,7 @@ public class EfImportJobRepository : IImportJobRepository
   /// <param name="job">The import job to add.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
   public async Task AddAsync(ImportJob job, CancellationToken cancellationToken = default)
-  {
-    await _db.ImportJobs.AddAsync(job, cancellationToken);
-    await _db.SaveChangesAsync(cancellationToken);
-  }
+    => await _db.ImportJobs.AddAsync(job, cancellationToken);
 
   /// <summary>Retrieves a single <see cref="ImportJob"/> by its identifier.</summary>
   /// <param name="id">The unique job identifier.</param>
@@ -51,10 +48,10 @@ public class EfImportJobRepository : IImportJobRepository
   /// <summary>Updates an existing <see cref="ImportJob"/> and saves changes.</summary>
   /// <param name="job">The job aggregate with updated state.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
-  public async Task UpdateAsync(ImportJob job, CancellationToken cancellationToken = default)
+  public Task UpdateAsync(ImportJob job, CancellationToken cancellationToken = default)
   {
     _db.ImportJobs.Update(job);
-    await _db.SaveChangesAsync(cancellationToken);
+    return Task.CompletedTask;
   }
 
     /// <summary>Retrieves the most recent <see cref="ImportJob"/> for a given document, if any exist.</summary>

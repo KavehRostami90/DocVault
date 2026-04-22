@@ -25,8 +25,8 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
   private const int    CandidateLimit    = 50;
   private const int    RrfK              = 60;
 
-  public bool CanHandle(DocVaultDbContext db, float[]? queryVector) =>
-    db.Database.IsRelational() && queryVector is not null;
+  public bool CanHandle(DocVaultDbContext db, float[]? queryVector, string[] terms) =>
+    db.Database.IsRelational() && queryVector is not null && terms.Length > 0;
 
   public async Task<Page<SearchResultItem>> SearchAsync(
     DocVaultDbContext db,

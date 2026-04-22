@@ -1,3 +1,4 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Results;
 using DocVault.Domain.Extensions;
@@ -5,10 +6,7 @@ using DocVault.Domain.Imports;
 
 namespace DocVault.Application.UseCases.Imports.GetImportStatus;
 
-/// <summary>
-/// Handles retrieval of import job status.
-/// </summary>
-public sealed class GetImportStatusHandler
+public sealed class GetImportStatusHandler : IQueryHandler<GetImportStatusQuery, Result<ImportJob>>
 {
   private readonly IImportJobRepository _importJobsRepo;
   private readonly IDocumentRepository _documents;

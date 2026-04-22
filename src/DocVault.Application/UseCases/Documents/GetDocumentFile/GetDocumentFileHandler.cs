@@ -1,9 +1,10 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Results;
 
 namespace DocVault.Application.UseCases.Documents.GetDocumentFile;
 
-public sealed class GetDocumentFileHandler
+public sealed class GetDocumentFileHandler : IQueryHandler<GetDocumentFileQuery, Result<DocumentFileReference>>
 {
   private readonly IDocumentRepository _documents;
   private readonly IImportJobRepository _imports;

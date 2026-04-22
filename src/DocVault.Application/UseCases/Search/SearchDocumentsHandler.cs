@@ -1,6 +1,6 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Persistence;
-using DocVault.Application.Common.Paging;
 using DocVault.Application.Common.Results;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +11,7 @@ namespace DocVault.Application.UseCases.Search;
 /// (pgvector cosine similarity) search. If embedding fails (e.g. Ollama not running),
 /// the search falls back to PostgreSQL full-text search automatically.
 /// </summary>
-public sealed partial class SearchDocumentsHandler
+public sealed partial class SearchDocumentsHandler : IQueryHandler<SearchDocumentsQuery, Result<SearchPageResult>>
 {
   private readonly IDocumentRepository _documents;
   private readonly IEmbeddingProvider  _embedding;

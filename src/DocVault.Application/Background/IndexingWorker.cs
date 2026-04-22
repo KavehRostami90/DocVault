@@ -12,13 +12,7 @@ namespace DocVault.Application.Background;
 
 /// <summary>
 /// Long-running hosted service that drains the indexing queue.
-/// <para>
-/// On startup it recovers any <c>Pending</c> or <c>InProgress</c> jobs
-/// left behind by a previous crash.  During normal operation it awaits
-/// each work item from the <see cref="IWorkQueue{T}"/> channel, executes
-/// the <see cref="IngestionPipeline"/>, and updates the
-/// <see cref="ImportJob"/> status in the database.
-/// </para>
+/// On startup it recovers any Pending or InProgress jobs left behind by a previous crash.
 /// </summary>
 public sealed partial class IndexingWorker : BackgroundService
 {
@@ -35,22 +29,17 @@ public sealed partial class IndexingWorker : BackgroundService
     IDomainEventDispatcher eventDispatcher,
     ILogger<IndexingWorker> logger)
   {
-    _queue          = queue;
-    _pipeline       = pipeline;
-    _scopeFactory   = scopeFactory;
+    _queue           = queue;
+    _pipeline        = pipeline;
+    _scopeFactory    = scopeFactory;
     _eventDispatcher = eventDispatcher;
-    _logger         = logger;
+    _logger          = logger;
   }
-
-  // -------------------------------------------------------------------------
-  // BackgroundService
-  // -------------------------------------------------------------------------
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
     try
     {
-      // Recover jobs that were queued but never processed (e.g. process crash).
       await RecoverPendingJobsAsync(stoppingToken);
     }
     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -74,10 +63,6 @@ public sealed partial class IndexingWorker : BackgroundService
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Recovery
-  // -------------------------------------------------------------------------
-
   private async Task RecoverPendingJobsAsync(CancellationToken ct)
   {
     using var scope = _scopeFactory.CreateScope();
@@ -91,15 +76,12 @@ public sealed partial class IndexingWorker : BackgroundService
       LogRecovered(_logger, pending.Count);
   }
 
-  // -------------------------------------------------------------------------
-  // Processing
-  // -------------------------------------------------------------------------
-
   private async Task ProcessItemAsync(IndexingWorkItem item, CancellationToken ct)
   {
     using var scope = _scopeFactory.CreateScope();
     var importJobRepository = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
     var documentRepository  = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+    var unitOfWork          = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
     var job = await importJobRepository.GetAsync(item.JobId, ct);
     if (job is null)
@@ -110,6 +92,7 @@ public sealed partial class IndexingWorker : BackgroundService
 
     job.MarkInProgress();
     await importJobRepository.UpdateAsync(job, ct);
+    await unitOfWork.SaveChangesAsync(ct);
 
     try
     {
@@ -126,8 +109,6 @@ public sealed partial class IndexingWorker : BackgroundService
 
         if (result.Chunks.Count > 0)
         {
-          // Keep document-level embedding in sync (first chunk) so the existing
-          // PgvectorSearchStrategy continues to work until Phase 2 upgrades it.
           document.AttachEmbedding(result.Chunks[0].Embedding);
 
           var chunkRepository = scope.ServiceProvider.GetRequiredService<IDocumentChunkRepository>();
@@ -144,11 +125,18 @@ public sealed partial class IndexingWorker : BackgroundService
               return c;
             })
             .ToList();
+
           await chunkRepository.ReplaceAsync(document.Id, domainChunks, ct);
         }
 
         document.MarkIndexed();
         await documentRepository.UpdateAsync(document, ct);
+      }
+
+      await unitOfWork.SaveChangesAsync(ct);
+
+      if (document is not null)
+      {
         await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);
         document.ClearDomainEvents();
       }
@@ -158,24 +146,20 @@ public sealed partial class IndexingWorker : BackgroundService
     catch (Exception ex) when (!ct.IsCancellationRequested)
     {
       LogFailed(_logger, item.JobId, ex);
-      await MarkFailedAsync(job, item.JobId, ex.Message, importJobRepository, documentRepository, ct);
+      await MarkFailedAsync(job, item.JobId, ex.Message, importJobRepository, documentRepository, unitOfWork, ct);
     }
   }
 
-  /// <summary>Runs the ingestion pipeline stages for the given work item.</summary>
   private Task<IngestionResult> RunPipelineAsync(IndexingWorkItem item, CancellationToken ct)
     => _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
 
-  /// <summary>
-  /// Updates the job and document to <c>Failed</c> status after a processing error.
-  /// Isolated so that state-transition errors don't mask the original exception.
-  /// </summary>
   private async Task MarkFailedAsync(
     ImportJob job,
     Guid jobId,
     string errorMessage,
     IImportJobRepository importJobRepository,
     IDocumentRepository documentRepository,
+    IUnitOfWork unitOfWork,
     CancellationToken ct)
   {
     try
@@ -188,6 +172,12 @@ public sealed partial class IndexingWorker : BackgroundService
       {
         document.MarkFailed(errorMessage);
         await documentRepository.UpdateAsync(document, ct);
+      }
+
+      await unitOfWork.SaveChangesAsync(ct);
+
+      if (document is not null)
+      {
         await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);
         document.ClearDomainEvents();
       }
@@ -198,32 +188,21 @@ public sealed partial class IndexingWorker : BackgroundService
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Source-generated log methods
-  // -------------------------------------------------------------------------
-
-  [LoggerMessage(1, LogLevel.Information,
-    "Recovered {Count} pending indexing job(s) from the database and re-enqueued them.")]
+  [LoggerMessage(1, LogLevel.Information, "Recovered {Count} pending indexing job(s) from the database and re-enqueued them.")]
   private static partial void LogRecovered(ILogger logger, int count);
 
-  [LoggerMessage(2, LogLevel.Information,
-    "Processing indexing job {JobId} — storage path: {StoragePath}")]
+  [LoggerMessage(2, LogLevel.Information, "Processing indexing job {JobId} — storage path: {StoragePath}")]
   private static partial void LogProcessing(ILogger logger, Guid jobId, string storagePath);
 
-  [LoggerMessage(3, LogLevel.Information,
-    "Indexing job {JobId} completed successfully.")]
+  [LoggerMessage(3, LogLevel.Information, "Indexing job {JobId} completed successfully.")]
   private static partial void LogCompleted(ILogger logger, Guid jobId);
 
-  [LoggerMessage(4, LogLevel.Error,
-    "Indexing job {JobId} failed.")]
+  [LoggerMessage(4, LogLevel.Error, "Indexing job {JobId} failed.")]
   private static partial void LogFailed(ILogger logger, Guid jobId, Exception ex);
 
-  [LoggerMessage(5, LogLevel.Warning,
-    "Indexing job {JobId} not found in the database; skipping.")]
+  [LoggerMessage(5, LogLevel.Warning, "Indexing job {JobId} not found in the database; skipping.")]
   private static partial void LogJobNotFound(ILogger logger, Guid jobId);
 
-  [LoggerMessage(6, LogLevel.Error,
-    "Failed to update status for indexing job {JobId} after a processing error.")]
+  [LoggerMessage(6, LogLevel.Error, "Failed to update status for indexing job {JobId} after a processing error.")]
   private static partial void LogStatusUpdateFailed(ILogger logger, Guid jobId, Exception ex);
 }
-

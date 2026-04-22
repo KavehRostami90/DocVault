@@ -5,10 +5,6 @@ using DocVault.Api.Contracts.Auth.Profile;
 using DocVault.Api.Middleware;
 using DocVault.Api.Validation;
 using DocVault.Application.Abstractions.Auth;
-using DocVault.Application.Abstractions.Email;
-using DocVault.Infrastructure.Auth;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Options;
 
 namespace DocVault.Api.Endpoints;
 
@@ -22,35 +18,19 @@ public static class AuthEndpoints
 
     group.MapPost("/register", async (
       RegisterRequest request,
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       ITokenService tokens,
       HttpContext http,
       CancellationToken ct) =>
     {
-      if (await users.FindByEmailAsync(request.Email) is not null)
-        return Results.Conflict(new { error = "Email already registered." });
+      var result = await userService.RegisterAsync(request.Email, request.Password, request.DisplayName, ct);
+      if (!result.IsSuccess)
+        return Results.Conflict(new { error = result.Error });
 
-      var user = new ApplicationUser
-      {
-        UserName = request.Email,
-        Email = request.Email,
-        DisplayName = request.DisplayName,
-        EmailConfirmed = true,
-      };
-
-      var result = await users.CreateAsync(user, request.Password);
-      if (!result.Succeeded)
-        return Results.ValidationProblem(
-          result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description }));
-
-      await users.AddToRoleAsync(user, AppRoles.User);
-
-      var pair = await tokens.CreateTokenPairAsync(
-        user.Id, user.Email!, user.DisplayName,
-        [AppRoles.User], isGuest: false, ct);
-
+      var profile = result.Value!;
+      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: false, ct);
       SetRefreshCookie(http, pair);
-      return Results.Ok(BuildResponse(user, pair, AppRoles.User));
+      return Results.Ok(BuildResponse(profile, pair));
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<RegisterRequest>())
     .AllowAnonymous()
@@ -61,25 +41,19 @@ public static class AuthEndpoints
 
     group.MapPost("/login", async (
       LoginRequest request,
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       ITokenService tokens,
       HttpContext http,
       CancellationToken ct) =>
     {
-      var user = await users.FindByEmailAsync(request.Email);
-      if (user is null || !await users.CheckPasswordAsync(user, request.Password))
-        return Results.Problem(
-          detail: "Invalid email or password.",
-          statusCode: StatusCodes.Status401Unauthorized);
+      var result = await userService.LoginAsync(request.Email, request.Password, ct);
+      if (!result.IsSuccess)
+        return Results.Problem(detail: result.Error, statusCode: StatusCodes.Status401Unauthorized);
 
-      var roles = await users.GetRolesAsync(user);
-      var primaryRole = roles.Contains(AppRoles.Admin) ? AppRoles.Admin : AppRoles.User;
-
-      var pair = await tokens.CreateTokenPairAsync(
-        user.Id, user.Email!, user.DisplayName, roles, user.IsGuest, ct);
-
+      var profile = result.Value!;
+      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, profile.IsGuest, ct);
       SetRefreshCookie(http, pair);
-      return Results.Ok(BuildResponse(user, pair, primaryRole));
+      return Results.Ok(BuildResponse(profile, pair));
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<LoginRequest>())
     .AllowAnonymous()
@@ -89,32 +63,19 @@ public static class AuthEndpoints
     .WithSummary("Login with email and password");
 
     group.MapPost("/guest", async (
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       ITokenService tokens,
       HttpContext http,
       CancellationToken ct) =>
     {
-      var guestEmail = $"guest_{Guid.NewGuid():N}@docvault.guest";
-      var user = new ApplicationUser
-      {
-        UserName = guestEmail,
-        Email = guestEmail,
-        DisplayName = "Guest",
-        IsGuest = true,
-        EmailConfirmed = true,
-      };
-
-      var result = await users.CreateAsync(user, Guid.NewGuid().ToString("N") + "Aa1!");
-      if (!result.Succeeded)
+      var result = await userService.CreateGuestAsync(ct);
+      if (!result.IsSuccess)
         return Results.Problem("Failed to create guest session.", statusCode: StatusCodes.Status500InternalServerError);
 
-      await users.AddToRoleAsync(user, AppRoles.Guest);
-
-      var pair = await tokens.CreateTokenPairAsync(
-        user.Id, user.Email!, "Guest", [AppRoles.Guest], isGuest: true, ct);
-
+      var profile = result.Value!;
+      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: true, ct);
       SetRefreshCookie(http, pair);
-      return Results.Ok(BuildResponse(user, pair, AppRoles.Guest));
+      return Results.Ok(BuildResponse(profile, pair));
     })
     .AllowAnonymous()
     .Produces<AuthResponse>()
@@ -156,20 +117,16 @@ public static class AuthEndpoints
 
     group.MapGet("/me", async (
       ICurrentUser currentUser,
-      UserManager<ApplicationUser> users) =>
+      IUserService userService) =>
     {
       if (!currentUser.IsAuthenticated || currentUser.UserId is null)
         return Results.Unauthorized();
 
-      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
-      if (user is null) return Results.Unauthorized();
+      var profile = await userService.GetByIdAsync(currentUser.UserId.ToString()!);
+      if (profile is null)
+        return Results.Unauthorized();
 
-      var roles = await users.GetRolesAsync(user);
-      var primaryRole = roles.Contains(AppRoles.Admin) ? AppRoles.Admin
-        : roles.Contains(AppRoles.Guest) ? AppRoles.Guest
-        : AppRoles.User;
-
-      return Results.Ok(new UserInfo(user.Id, user.Email!, user.DisplayName, primaryRole, user.IsGuest, user.CreatedAt));
+      return Results.Ok(ToUserInfo(profile));
     })
     .RequireAuthorization()
     .Produces<UserInfo>()
@@ -178,22 +135,15 @@ public static class AuthEndpoints
     group.MapPut("/me", async (
       UpdateProfileRequest request,
       ICurrentUser currentUser,
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       CancellationToken ct) =>
     {
       if (!currentUser.IsAuthenticated || currentUser.UserId is null)
         return Results.Unauthorized();
 
-      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
-      if (user is null) return Results.Unauthorized();
-
-      user.DisplayName = request.DisplayName;
-      var result = await users.UpdateAsync(user);
-      if (!result.Succeeded)
-        return Results.ValidationProblem(
-          result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description }));
-
-      return Results.NoContent();
+      var result = await userService.UpdateDisplayNameAsync(currentUser.UserId.ToString()!, request.DisplayName, ct);
+      return result.IsSuccess ? Results.NoContent() : Results.ValidationProblem(
+        new Dictionary<string, string[]> { ["displayName"] = [result.Error ?? "Update failed."] });
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<UpdateProfileRequest>())
     .RequireAuthorization()
@@ -203,21 +153,15 @@ public static class AuthEndpoints
     group.MapPut("/me/reset-password", async (
       ResetUserPasswordRequest request,
       ICurrentUser currentUser,
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       CancellationToken ct) =>
     {
       if (!currentUser.IsAuthenticated || currentUser.UserId is null)
         return Results.Unauthorized();
 
-      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
-      if (user is null) return Results.Unauthorized();
-
-      await users.RemovePasswordAsync(user);
-      var result = await users.AddPasswordAsync(user, request.NewPassword);
-
-      return result.Succeeded ? Results.NoContent() : Results.Problem(
-        detail: string.Join("; ", result.Errors.Select(e => e.Description)),
-        statusCode: StatusCodes.Status422UnprocessableEntity);
+      var result = await userService.AdminResetPasswordAsync(currentUser.UserId.ToString()!, request.NewPassword, ct);
+      return result.IsSuccess ? Results.NoContent() : Results.Problem(
+        detail: result.Error, statusCode: StatusCodes.Status422UnprocessableEntity);
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<ResetUserPasswordRequest>())
     .RequireAuthorization(AuthPolicies.RequireAdmin)
@@ -227,21 +171,15 @@ public static class AuthEndpoints
     group.MapPut("/me/password", async (
       ChangePasswordRequest request,
       ICurrentUser currentUser,
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       CancellationToken ct) =>
     {
       if (!currentUser.IsAuthenticated || currentUser.UserId is null)
         return Results.Unauthorized();
 
-      var user = await users.FindByIdAsync(currentUser.UserId.ToString()!);
-      if (user is null || user.IsGuest) return Results.Unauthorized();
-
-      var result = await users.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
-      if (!result.Succeeded)
-        return Results.ValidationProblem(
-          result.Errors.ToDictionary(e => e.Code, e => new[] { e.Description }));
-
-      return Results.NoContent();
+      var result = await userService.ChangePasswordAsync(currentUser.UserId.ToString()!, request.CurrentPassword, request.NewPassword, ct);
+      return result.IsSuccess ? Results.NoContent() : Results.ValidationProblem(
+        new Dictionary<string, string[]> { ["password"] = [result.Error ?? "Password change failed."] });
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<ChangePasswordRequest>())
     .RequireAuthorization()
@@ -251,22 +189,10 @@ public static class AuthEndpoints
 
     group.MapPost("/forgot-password", async (
       ForgotPasswordRequest request,
-      UserManager<ApplicationUser> users,
-      IEmailService email,
-      IOptions<AuthSettings> settings,
+      IUserService userService,
       CancellationToken ct) =>
     {
-      var user = await users.FindByEmailAsync(request.Email);
-
-      // Always return 200 — never reveal whether the email is registered.
-      if (user is not null && !user.IsGuest)
-      {
-        var token = await users.GeneratePasswordResetTokenAsync(user);
-        var link  = $"{settings.Value.FrontendBaseUrl.TrimEnd('/')}/reset-password" +
-                    $"?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(user.Email!)}";
-        await email.SendPasswordResetAsync(user.Email!, link, ct);
-      }
-
+      await userService.SendPasswordResetEmailAsync(request.Email, ct);
       return Results.Ok(new { message = "If that email is registered you will receive a reset link shortly." });
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<ForgotPasswordRequest>())
@@ -276,20 +202,12 @@ public static class AuthEndpoints
 
     group.MapPost("/reset-password", async (
       ResetPasswordRequest request,
-      UserManager<ApplicationUser> users,
+      IUserService userService,
       CancellationToken ct) =>
     {
-      var user = await users.FindByEmailAsync(request.Email);
-      if (user is null || user.IsGuest)
-        return Results.Problem("Invalid or expired reset link.", statusCode: StatusCodes.Status400BadRequest);
-
-      var result = await users.ResetPasswordAsync(user, request.Token, request.NewPassword);
-      if (!result.Succeeded)
-        return Results.Problem(
-          detail: result.Errors.FirstOrDefault()?.Description ?? "Invalid or expired reset link.",
-          statusCode: StatusCodes.Status400BadRequest);
-
-      return Results.NoContent();
+      var result = await userService.ResetPasswordAsync(request.Email, request.Token, request.NewPassword, ct);
+      return result.IsSuccess ? Results.NoContent() : Results.Problem(
+        detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<ResetPasswordRequest>())
     .AllowAnonymous()
@@ -303,10 +221,7 @@ public static class AuthEndpoints
 
   private static void SetRefreshCookie(HttpContext http, TokenPair pair)
   {
-    // In production: SameSite=None;Secure is required for cross-origin cookie (SWA → App Service).
-    // In development: SameSite=Lax without Secure so the cookie works over HTTP through the Vite proxy.
     var isDev = http.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment();
-
     http.Response.Cookies.Append(RefreshTokenCookie, pair.RefreshToken, new CookieOptions
     {
       HttpOnly = true,
@@ -317,7 +232,14 @@ public static class AuthEndpoints
     });
   }
 
-  private static AuthResponse BuildResponse(ApplicationUser user, TokenPair pair, string role) =>
-    new(pair.AccessToken, pair.ExpiresInSeconds,
-      new UserInfo(user.Id, user.Email!, user.DisplayName, role, user.IsGuest, user.CreatedAt));
+  private static AuthResponse BuildResponse(UserProfile profile, TokenPair pair)
+    => new(pair.AccessToken, pair.ExpiresInSeconds, ToUserInfo(profile));
+
+  private static UserInfo ToUserInfo(UserProfile profile)
+  {
+    var primaryRole = profile.Roles.Contains("Admin") ? "Admin"
+                    : profile.Roles.Contains("Guest") ? "Guest"
+                    : "User";
+    return new UserInfo(profile.Id, profile.Email, profile.DisplayName, primaryRole, profile.IsGuest, profile.CreatedAt);
+  }
 }

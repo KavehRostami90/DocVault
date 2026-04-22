@@ -7,7 +7,6 @@ using DocVault.Application.Abstractions.Qa;
 using DocVault.Application.Abstractions.Realtime;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
-using DocVault.Infrastructure.Text;
 using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Background.Queue;
 using DocVault.Domain.Events;
@@ -19,8 +18,10 @@ using DocVault.Infrastructure.Messaging.Handlers;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Persistence.Repositories;
 using DocVault.Infrastructure.Qa;
+using DocVault.Infrastructure.Queue;
 using DocVault.Infrastructure.Realtime;
 using DocVault.Infrastructure.Storage;
+using DocVault.Infrastructure.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -49,11 +50,10 @@ public static class DependencyInjection
         options.UseNpgsql(connectionString, o => o.UseVector()));
       services.AddScoped(sp =>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
-
       services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
     }
 
-    // ASP.NET Core Identity (roles + EF stores)
+    // ASP.NET Core Identity
     services.AddIdentityCore<ApplicationUser>(options =>
     {
       options.Password.RequiredLength = 8;
@@ -66,8 +66,19 @@ public static class DependencyInjection
 
     services.Configure<AuthSettings>(configuration.GetSection(AuthSettings.Section));
     services.AddScoped<ITokenService, JwtTokenService>();
+    services.AddScoped<IUserService, IdentityUserService>();
     services.AddScoped<IEmailService, LogEmailService>();
     services.AddScoped<IdentitySeeder>();
+
+    // Search strategies registered in priority order (first match wins).
+    // Hybrid: vector + FTS terms → RRF fusion
+    // Pgvector: vector only (no FTS terms) → pure semantic
+    // Postgres: FTS only (no vector) → full-text keyword
+    // InMemory: fallback for non-relational providers (tests)
+    services.AddScoped<IDocumentSearchStrategy, HybridSearchStrategy>();
+    services.AddScoped<IDocumentSearchStrategy, PgvectorSearchStrategy>();
+    services.AddScoped<IDocumentSearchStrategy, PostgresSearchStrategy>();
+    services.AddScoped<IDocumentSearchStrategy, InMemorySearchStrategy>();
 
     services.AddScoped<IDocumentRepository, EfDocumentRepository>();
     services.AddScoped<IDocumentChunkRepository, EfDocumentChunkRepository>();
@@ -84,9 +95,7 @@ public static class DependencyInjection
       {
         sp.GetRequiredService<ILoggerFactory>()
           .CreateLogger("DocVault.Infrastructure")
-          .LogInformation("File storage: AzureBlobFileStorage (endpoint={BlobEndpoint}, container={Container})",
-            azureBlobConnStr.Split(';').FirstOrDefault(p => p.StartsWith("BlobEndpoint", StringComparison.OrdinalIgnoreCase)) ?? "default",
-            azureBlobContainer);
+          .LogInformation("File storage: AzureBlobFileStorage (container={Container})", azureBlobContainer);
         return new AzureBlobFileStorage(azureBlobConnStr, azureBlobContainer);
       });
     }

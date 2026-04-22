@@ -1,3 +1,4 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Common.Results;
@@ -26,7 +27,7 @@ public sealed record AdminStatsDto(
 /// <see cref="IUserQueryService"/> and document counts from <see cref="IDocumentRepository"/>.
 /// All data is fetched here — no computation is performed in the API layer.
 /// </summary>
-public sealed class GetAdminStatsHandler
+public sealed class GetAdminStatsHandler : IQueryHandler<GetAdminStatsQuery, Result<AdminStatsDto>>
 {
   private readonly IDocumentRepository _documents;
   private readonly IUserQueryService _users;
