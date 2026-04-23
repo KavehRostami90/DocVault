@@ -45,8 +45,11 @@ public sealed partial class OpenAiQuestionAnsweringService : IQuestionAnsweringS
     var body = new ChatRequest(
       _qaOptions.Model,
       [
-        new ChatMessage("system", "You answer strictly from provided context. If context is insufficient, reply: 'I don't know from the indexed documents.'"),
-        new ChatMessage("user", $"Question: {question}\n\nContext:\n{contextText}\n\nProvide a concise answer.")
+        new ChatMessage("system",
+          "You answer strictly from the provided context. " +
+          "Always respond in the same language as the user's question — never switch to a different language. " +
+          "If the context does not contain enough information, say so briefly in the question's language."),
+        new ChatMessage("user", $"Question: {question}\n\nContext:\n{contextText}\n\nAnswer the question using only the context above. Respond in the same language as the question.")
       ],
       _qaOptions.MaxTokens);
 

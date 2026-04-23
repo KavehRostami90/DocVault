@@ -42,13 +42,15 @@ public sealed class DocumentTestDataSeeder : IDocumentTestDataSeeder
     {
         using var scope = _serviceProvider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+        var context    = scope.ServiceProvider.GetRequiredService<DocVaultDbContext>();
 
         var document = DocumentTestBuilder.New()
             .WithTitle(title)
             .WithContent(content)
             .Build();
 
-        await repository.AddAsync(document);
+        await repository.AddAsync(document, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
         return document.Id.Value;
     }
 
@@ -58,6 +60,7 @@ public sealed class DocumentTestDataSeeder : IDocumentTestDataSeeder
     {
         using var scope = _serviceProvider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+        var context    = scope.ServiceProvider.GetRequiredService<DocVaultDbContext>();
 
         var documentIds = new List<Guid>();
 
@@ -68,10 +71,11 @@ public sealed class DocumentTestDataSeeder : IDocumentTestDataSeeder
                 .WithContent(content)
                 .Build();
 
-            await repository.AddAsync(document);
+            await repository.AddAsync(document, cancellationToken);
             documentIds.Add(document.Id.Value);
         }
 
+        await context.SaveChangesAsync(cancellationToken);
         return documentIds.AsReadOnly();
     }
 }

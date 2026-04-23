@@ -1,7 +1,5 @@
 using DocVault.Application.Background;
-using DocVault.Application.Background.Queue;
 using DocVault.Application.Pipeline;
-using DocVault.Application.Pipeline.Hooks;
 using DocVault.Application.Pipeline.Stages;
 using DocVault.Application.UseCases.Admin;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
@@ -21,10 +19,6 @@ namespace DocVault.Application;
 
 public static class DependencyInjection
 {
-  /// <summary>
-  /// Registers application-layer services, handlers, pipeline stages, and background workers.
-  /// </summary>
-  /// <param name="services">Service collection to populate.</param>
   public static IServiceCollection AddApplication(this IServiceCollection services)
   {
     services.AddScoped<ImportDocumentHandler>();
@@ -47,13 +41,8 @@ public static class DependencyInjection
     services.AddSingleton<ChunkingStage>();
     services.AddSingleton<EmbeddingStage>();
     services.AddSingleton<IndexStage>();
-    services.AddSingleton(_ => DefaultHooks.Empty);
     services.AddSingleton<IIngestionPipeline, IngestionPipeline>();
 
-    // Channel-backed queue: thread-safe, async-blocking, no extra package.
-    services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
-
-    // Register as a hosted service so the runtime starts/stops it automatically.
     services.AddHostedService<IndexingWorker>();
 
     return services;

@@ -71,6 +71,8 @@ public sealed class SearchTests : BaseIntegrationTest
       text:  "Kubernetes and docker containers for microservices deployment.");
     await repo.AddAsync(doc3);
     _dockerDocId = doc3.Id.Value;
+
+    await context.SaveChangesAsync();
   }
 
   // ---------------------------------------------------------------------------

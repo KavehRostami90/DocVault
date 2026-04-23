@@ -1,4 +1,6 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Common.Paging;
+using DocVault.Domain.Documents;
 
 namespace DocVault.Application.UseCases.Documents.ListDocuments;
 
@@ -11,4 +13,4 @@ public sealed record ListDocumentsQuery(
   string? Status = null,
   string? Tag = null,
   Guid? OwnerId = null,
-  bool IsAdmin = false);
+  bool IsAdmin = false) : IQuery<Page<Document>>;

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Qa;
 using DocVault.Application.Common.Results;
 using DocVault.Application.UseCases.Search;
@@ -13,7 +14,7 @@ namespace DocVault.Application.UseCases.Qa;
 /// 3) call QA generator,
 /// 4) return answer + citations.
 /// </summary>
-public sealed partial class AskQuestionHandler
+public sealed partial class AskQuestionHandler : IQueryHandler<AskQuestionQuery, Result<AskQuestionResult>>
 {
   private readonly SearchDocumentsHandler _search;
   private readonly IQuestionAnsweringService _qa;
@@ -71,8 +72,8 @@ public sealed partial class AskQuestionHandler
 
   private static List<QaContextChunk> BuildContexts(IReadOnlyList<SearchResultItem> items, string question, int maxContexts)
   {
-    var terms = Regex.Matches(question.ToLowerInvariant(), "[a-z0-9]+")
-      .Select(m => m.Value)
+    var terms = Regex.Matches(question, @"\p{L}+|\p{N}+")
+      .Select(m => m.Value.ToLowerInvariant())
       .Where(t => t.Length > 2)
       .Distinct()
       .ToArray();

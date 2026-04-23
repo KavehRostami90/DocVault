@@ -19,7 +19,7 @@ public class ListTagsHandlerTests
 
         var handler = new ListTagsHandler(repository.Object);
 
-        var result = await handler.HandleAsync(null, cancellationToken);
+        var result = await handler.HandleAsync(new ListTagsQuery(), cancellationToken);
 
         Assert.Equal(new[] { "alpha", "beta" }, result);
         repository.Verify(r => r.ListAsync(null, cancellationToken), Times.Once);
@@ -35,7 +35,7 @@ public class ListTagsHandlerTests
 
         var handler = new ListTagsHandler(repository.Object);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(null, cancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(new ListTagsQuery(), cancellationToken));
         repository.Verify(r => r.ListAsync(null, cancellationToken), Times.Once);
         repository.VerifyNoOtherCalls();
     }
@@ -49,7 +49,7 @@ public class ListTagsHandlerTests
 
         var handler = new ListTagsHandler(repository.Object);
 
-        var result = await handler.HandleAsync(null, cancellationToken);
+        var result = await handler.HandleAsync(new ListTagsQuery(), cancellationToken);
 
         Assert.Empty(result);
         repository.Verify(r => r.ListAsync(null, cancellationToken), Times.Once);
@@ -68,7 +68,7 @@ public class ListTagsHandlerTests
 
         var handler = new ListTagsHandler(repository.Object);
 
-        var result = await handler.HandleAsync(ownerId, cancellationToken);
+        var result = await handler.HandleAsync(new ListTagsQuery(ownerId), cancellationToken);
 
         Assert.Equal(new[] { "finance" }, result);
         repository.Verify(r => r.ListAsync(ownerId, cancellationToken), Times.Once);

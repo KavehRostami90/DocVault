@@ -1,6 +1,7 @@
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Background.Queue;
 using DocVault.Infrastructure.Persistence;
+using DocVault.Infrastructure.Queue;
 using DocVault.Infrastructure.Storage;
 using DocVault.IntegrationTests.Infrastructure;
 using Microsoft.AspNetCore.Authentication;

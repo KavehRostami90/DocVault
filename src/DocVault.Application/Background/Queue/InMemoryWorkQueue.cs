@@ -39,6 +39,6 @@ public sealed class InMemoryWorkQueue<T> : IWorkQueue<T>
 
     return ValueTask.FromException<T>(
       new InvalidOperationException(
-        $"{nameof(InMemoryWorkQueue<T>)} does not support async waiting. Use {nameof(ChannelWorkQueue<T>)} instead."));
+        $"{nameof(InMemoryWorkQueue<T>)} does not support async waiting. Use ChannelWorkQueue instead."));
   }
 }

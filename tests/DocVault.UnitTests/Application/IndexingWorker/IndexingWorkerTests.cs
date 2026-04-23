@@ -62,17 +62,22 @@ public sealed class IndexingWorkerTests
         configureJobRepo?.Invoke(jobRepo);
         configureDocRepo?.Invoke(docRepo);
 
-        // ServiceProvider that resolves the two repos + chunk repo
+        // ServiceProvider that resolves the two repos + chunk repo + unit of work
         var chunkRepo = new Mock<IDocumentChunkRepository>();
         chunkRepo.Setup(r => r.ReplaceAsync(It.IsAny<DocumentId>(),
                                             It.IsAny<IReadOnlyList<DocumentChunk>>(),
                                             It.IsAny<CancellationToken>()))
                  .Returns(Task.CompletedTask);
 
+        var unitOfWork = new Mock<IUnitOfWork>();
+        unitOfWork.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
+                  .Returns(Task.CompletedTask);
+
         var services = new ServiceCollection();
         services.AddSingleton(jobRepo.Object);
         services.AddSingleton(docRepo.Object);
         services.AddSingleton(chunkRepo.Object);
+        services.AddSingleton(unitOfWork.Object);
         var sp = services.BuildServiceProvider();
 
         var scopeFactory = new Mock<IServiceScopeFactory>();

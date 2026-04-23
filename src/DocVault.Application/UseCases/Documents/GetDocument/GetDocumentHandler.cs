@@ -1,10 +1,11 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Results;
 using DocVault.Domain.Documents;
 
 namespace DocVault.Application.UseCases.Documents.GetDocument;
 
-public sealed class GetDocumentHandler
+public sealed class GetDocumentHandler : IQueryHandler<GetDocumentQuery, Result<Document>>
 {
   private readonly IDocumentRepository _documents;
 

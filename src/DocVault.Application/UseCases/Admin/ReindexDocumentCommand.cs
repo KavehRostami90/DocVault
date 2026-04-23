@@ -1,9 +1,7 @@
+using DocVault.Application.Abstractions.Cqrs;
+using DocVault.Application.Common.Results;
 using DocVault.Domain.Documents;
 
 namespace DocVault.Application.UseCases.Admin;
 
-/// <summary>
-/// Command that re-queues an existing document for the full ingestion pipeline.
-/// </summary>
-/// <param name="DocumentId">Identifier of the document to reindex.</param>
-public sealed record ReindexDocumentCommand(DocumentId DocumentId);
+public sealed record ReindexDocumentCommand(DocumentId DocumentId) : ICommand<Result>;

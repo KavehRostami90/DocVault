@@ -1,9 +1,10 @@
+using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Common.Paging;
 
 namespace DocVault.Application.UseCases.Documents.ListDocuments;
 
-public sealed class ListDocumentsHandler
+public sealed class ListDocumentsHandler : IQueryHandler<ListDocumentsQuery, Page<DocVault.Domain.Documents.Document>>
 {
   private readonly IDocumentRepository _documents;
 

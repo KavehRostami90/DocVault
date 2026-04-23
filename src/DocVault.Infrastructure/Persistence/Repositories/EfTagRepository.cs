@@ -25,10 +25,7 @@ public class EfTagRepository : ITagRepository
   /// <param name="tag">Tag entity to persist.</param>
   /// <param name="cancellationToken">Cancellation token.</param>
   public async Task AddAsync(Tag tag, CancellationToken cancellationToken = default)
-  {
-    await _db.Tags.AddAsync(tag, cancellationToken);
-    await _db.SaveChangesAsync(cancellationToken);
-  }
+    => await _db.Tags.AddAsync(tag, cancellationToken);
 
   /// <summary>
   /// Gets a tag by its normalized name.

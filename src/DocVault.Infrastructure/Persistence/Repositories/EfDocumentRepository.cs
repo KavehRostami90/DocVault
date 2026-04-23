@@ -11,59 +11,35 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// EF Core implementation of <see cref="IDocumentRepository"/>.
-/// Provides CRUD operations, paginated listing with dynamic filter/sort,
-/// and keyword-based full-text search delegated to <see cref="IDocumentSearchStrategy"/> implementations.
+/// Repositories only stage changes via the EF change tracker; callers flush via <see cref="IUnitOfWork"/>.
+/// Search is delegated to the first matching <see cref="IDocumentSearchStrategy"/> (registered by priority).
 /// </summary>
-public class EfDocumentRepository : IDocumentRepository
+internal class EfDocumentRepository : IDocumentRepository
 {
   private readonly DocVaultDbContext _db;
+  private readonly IEnumerable<IDocumentSearchStrategy> _strategies;
 
-  // Filter predicates are built once and reused across requests.
   private static readonly IReadOnlyDictionary<string, Func<string, Expression<Func<Document, bool>>>>
     _filterRegistry = DocumentFilterRegistry.Build();
 
-  // Strategies are tried in order; the first whose CanHandle returns true wins.
-  // HybridSearchStrategy: relational + vector (RRF fusion when terms present, chunk-semantic otherwise).
-  // PgvectorSearchStrategy: relational + vector, no terms (pure semantic, lower priority than Hybrid).
-  // PostgresSearchStrategy: relational FTS keyword fallback.
-  // InMemorySearchStrategy: always-matches fallback for non-relational providers (tests).
-  private static readonly IReadOnlyList<IDocumentSearchStrategy> _searchStrategies =
-  [
-    new HybridSearchStrategy(),
-    new PostgresSearchStrategy(),
-    new InMemorySearchStrategy(),
-  ];
-
-  /// <summary>Initialises the repository with the scoped database context.</summary>
-  /// <param name="db">The EF Core database context for this request scope.</param>
-  public EfDocumentRepository(DocVaultDbContext db)
+  public EfDocumentRepository(DocVaultDbContext db, IEnumerable<IDocumentSearchStrategy> strategies)
   {
-    _db = db;
+    _db         = db;
+    _strategies = strategies;
   }
 
-  /// <summary>Persists a new <see cref="Document"/> and saves changes.</summary>
   public async Task AddAsync(Document document, CancellationToken cancellationToken = default)
-  {
-    await _db.Documents.AddAsync(document, cancellationToken);
-    await _db.SaveChangesAsync(cancellationToken);
-  }
+    => await _db.Documents.AddAsync(document, cancellationToken);
 
-  /// <summary>Removes a <see cref="Document"/> and saves changes.</summary>
-  public async Task DeleteAsync(Document document, CancellationToken cancellationToken = default)
+  public Task DeleteAsync(Document document, CancellationToken cancellationToken = default)
   {
     _db.Documents.Remove(document);
-    await _db.SaveChangesAsync(cancellationToken);
+    return Task.CompletedTask;
   }
 
-  /// <summary>Retrieves a single <see cref="Document"/> by its identifier, including its tags.</summary>
   public Task<Document?> GetAsync(DocumentId id, CancellationToken cancellationToken = default)
     => _db.Documents.Include(d => d.Tags).FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
 
-  /// <summary>
-  /// Returns a paginated, filtered, and sorted page of documents.
-  /// Supported filter keys: <c>title</c>, <c>status</c>, <c>tag</c>.
-  /// Supported sort keys: <c>title</c>, <c>fileName</c>, <c>size</c>, <c>status</c>, <c>createdAt</c>, <c>updatedAt</c>.
-  /// </summary>
   public async Task<Page<Document>> ListAsync(PageRequest request, Guid? ownerId = null, CancellationToken cancellationToken = default)
   {
     var query = _db.Documents.Include(d => d.Tags).AsQueryable();
@@ -90,29 +66,22 @@ public class EfDocumentRepository : IDocumentRepository
     return new Page<Document>(items, request.Page, request.Size, total);
   }
 
-  /// <summary>Updates an existing <see cref="Document"/> and saves changes.</summary>
-  public async Task UpdateAsync(Document document, CancellationToken cancellationToken = default)
+  public Task UpdateAsync(Document document, CancellationToken cancellationToken = default)
   {
     _db.Documents.Update(document);
-    await _db.SaveChangesAsync(cancellationToken);
+    return Task.CompletedTask;
   }
 
-  /// <summary>
-  /// Searches documents using the best available strategy for the active database provider.
-  /// When <paramref name="queryVector"/> is provided and the database is PostgreSQL with pgvector,
-  /// semantic cosine-similarity search is used; otherwise falls back to full-text search.
-  /// </summary>
   public async Task<Page<SearchResultItem>> SearchAsync(string query, int page, int size, Guid? ownerId = null, float[]? queryVector = null, CancellationToken cancellationToken = default)
   {
     var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     if (terms.Length == 0 && queryVector is null)
       return new Page<SearchResultItem>([], page, size, 0);
 
-    var strategy = _searchStrategies.First(s => s.CanHandle(_db, queryVector));
+    var strategy = _strategies.First(s => s.CanHandle(_db, queryVector, terms));
     return await strategy.SearchAsync(_db, terms, page, size, ownerId, queryVector, cancellationToken);
   }
 
-  /// <summary>Returns document counts grouped by processing status.</summary>
   public async Task<Dictionary<string, long>> GetCountsByStatusAsync(CancellationToken cancellationToken = default)
   {
     var rows = await _db.Documents

@@ -6,23 +6,26 @@ namespace DocVault.Infrastructure;
 
 /// <summary>
 /// EF Core implementation of <see cref="IUnitOfWork"/>.
-/// Falls back to a no-op scope when the provider does not support transactions
-/// (e.g. the in-memory database used in tests).
+/// Repositories stage changes via the EF change tracker; this class decides when to flush.
+/// Falls back to a no-op scope when the provider does not support transactions (e.g. in-memory DB).
 /// </summary>
 public sealed class EfUnitOfWork : IUnitOfWork
 {
   private readonly DocVaultDbContext _db;
 
-  /// <summary>Initialises the unit of work with the current scoped DbContext.</summary>
   public EfUnitOfWork(DocVaultDbContext db) => _db = db;
+
+  /// <inheritdoc />
+  public Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    => _db.SaveChangesAsync(cancellationToken);
 
   /// <inheritdoc />
   public async Task ExecuteInTransactionAsync(Func<CancellationToken, Task> action, CancellationToken cancellationToken = default)
   {
     if (!_db.Database.IsRelational())
     {
-      // In-memory provider does not support transactions — execute directly.
       await action(cancellationToken);
+      await _db.SaveChangesAsync(cancellationToken);
       return;
     }
 
@@ -30,6 +33,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
     try
     {
       await action(cancellationToken);
+      await _db.SaveChangesAsync(cancellationToken);
       await tx.CommitAsync(cancellationToken);
     }
     catch

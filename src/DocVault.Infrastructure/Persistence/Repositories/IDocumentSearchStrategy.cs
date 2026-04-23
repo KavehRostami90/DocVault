@@ -5,18 +5,17 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Strategy that executes a keyword search against a <see cref="DocVaultDbContext"/>.
-/// Implementations choose the appropriate engine (Postgres FTS or in-memory LIKE)
-/// based on the provider in use.
+/// The first registered strategy whose <see cref="CanHandle"/> returns <c>true</c> wins.
 /// </summary>
 internal interface IDocumentSearchStrategy
 {
   /// <summary>
   /// Returns <c>true</c> when this strategy can handle the active database provider and query type.
-  /// The first matching strategy (by registration order) wins.
   /// </summary>
   /// <param name="db">The active database context.</param>
   /// <param name="queryVector">Non-null when a semantic embedding is available for the query.</param>
-  bool CanHandle(DocVaultDbContext db, float[]? queryVector);
+  /// <param name="terms">Non-empty when the query produced searchable text terms.</param>
+  bool CanHandle(DocVaultDbContext db, float[]? queryVector, string[] terms);
 
   /// <summary>Executes the search and returns a paginated result set.</summary>
   Task<Page<SearchResultItem>> SearchAsync(
