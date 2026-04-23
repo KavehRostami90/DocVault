@@ -138,9 +138,11 @@ public static class DependencyInjection
       services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>()
         .AddStandardResilienceHandler(o =>
         {
-          o.AttemptTimeout.Timeout         = TimeSpan.FromSeconds(90);
-          o.TotalRequestTimeout.Timeout    = TimeSpan.FromSeconds(300);
-          o.Retry.MaxRetryAttempts         = 2;
+          o.AttemptTimeout.Timeout                   = TimeSpan.FromSeconds(90);
+          o.TotalRequestTimeout.Timeout              = TimeSpan.FromSeconds(300);
+          o.Retry.MaxRetryAttempts                   = 2;
+          // SamplingDuration must be > 2× AttemptTimeout (Polly constraint).
+          o.CircuitBreaker.SamplingDuration          = TimeSpan.FromSeconds(300);
         });
     }
     else
