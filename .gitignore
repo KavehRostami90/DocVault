@@ -54,3 +54,11 @@ ui/*.tsbuildinfo
 
 # Directory placeholders — never commit
 .gitkeep
+
+# Claude Code — local settings and project instructions are machine-specific
+CLAUDE.md
+.claude/settings.local.json
+
+# GitHub Copilot — local instructions and settings are machine-specific
+.github/copilot-instructions.md
+.copilot/
