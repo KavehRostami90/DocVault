@@ -124,8 +124,24 @@ public static class DependencyInjection
     if (openAiOptions.IsConfigured)
     {
       services.Configure<OpenAiOptions>(configuration.GetSection(OpenAiOptions.Section));
-      services.AddHttpClient<IEmbeddingProvider, OpenAiEmbeddingProvider>();
-      services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>();
+
+      // Retry (3×, exponential backoff + jitter) + circuit breaker on transient HTTP errors.
+      // QA completions can be slow, so attempt timeout is raised to 90 s.
+      services.AddHttpClient<IEmbeddingProvider, OpenAiEmbeddingProvider>()
+        .AddStandardResilienceHandler(o =>
+        {
+          o.AttemptTimeout.Timeout         = TimeSpan.FromSeconds(15);
+          o.TotalRequestTimeout.Timeout    = TimeSpan.FromSeconds(60);
+          o.Retry.MaxRetryAttempts         = 3;
+        });
+
+      services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>()
+        .AddStandardResilienceHandler(o =>
+        {
+          o.AttemptTimeout.Timeout         = TimeSpan.FromSeconds(90);
+          o.TotalRequestTimeout.Timeout    = TimeSpan.FromSeconds(300);
+          o.Retry.MaxRetryAttempts         = 2;
+        });
     }
     else
     {

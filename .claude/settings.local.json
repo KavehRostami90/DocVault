@@ -14,7 +14,8 @@
       "Bash(ls *.md docs/)",
       "Bash(gh pr *)",
       "Bash(npx tsc *)",
-      "Bash(Remove-Item \"D:\\\\Projects\\\\DocVault\\\\src\\\\DocVault.Infrastructure\\\\Migrations\\\\20260420000000_AddDocumentChunks.cs\" -Force)"
+      "Bash(Remove-Item \"D:\\\\Projects\\\\DocVault\\\\src\\\\DocVault.Infrastructure\\\\Migrations\\\\20260420000000_AddDocumentChunks.cs\" -Force)",
+      "Bash(dotnet restore *)"
     ]
   }
 }
