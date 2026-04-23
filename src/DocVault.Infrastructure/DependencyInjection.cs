@@ -1,4 +1,5 @@
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Infrastructure.Resilience;
 using DocVault.Application.Abstractions.Email;
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Messaging;
@@ -26,6 +27,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace DocVault.Infrastructure;
@@ -125,25 +127,13 @@ public static class DependencyInjection
     {
       services.Configure<OpenAiOptions>(configuration.GetSection(OpenAiOptions.Section));
 
-      // Retry (3×, exponential backoff + jitter) + circuit breaker on transient HTTP errors.
-      // QA completions can be slow, so attempt timeout is raised to 90 s.
+      var resilience = configuration.GetSection(ResilienceOptions.Section).Get<ResilienceOptions>() ?? new ResilienceOptions();
+
       services.AddHttpClient<IEmbeddingProvider, OpenAiEmbeddingProvider>()
-        .AddStandardResilienceHandler(o =>
-        {
-          o.AttemptTimeout.Timeout         = TimeSpan.FromSeconds(15);
-          o.TotalRequestTimeout.Timeout    = TimeSpan.FromSeconds(60);
-          o.Retry.MaxRetryAttempts         = 3;
-        });
+        .AddStandardResilienceHandler(o => ApplyResilience(o, resilience.Embedding));
 
       services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>()
-        .AddStandardResilienceHandler(o =>
-        {
-          o.AttemptTimeout.Timeout                   = TimeSpan.FromSeconds(90);
-          o.TotalRequestTimeout.Timeout              = TimeSpan.FromSeconds(300);
-          o.Retry.MaxRetryAttempts                   = 2;
-          // SamplingDuration must be > 2× AttemptTimeout (Polly constraint).
-          o.CircuitBreaker.SamplingDuration          = TimeSpan.FromSeconds(300);
-        });
+        .AddStandardResilienceHandler(o => ApplyResilience(o, resilience.Qa));
     }
     else
     {
@@ -169,5 +159,15 @@ public static class DependencyInjection
     services.AddHostedService<DatabaseInitializer>();
 
     return services;
+  }
+
+  private static void ApplyResilience(HttpStandardResilienceOptions o, ClientResilienceOptions opts)
+  {
+    o.AttemptTimeout.Timeout      = TimeSpan.FromSeconds(opts.AttemptTimeoutSeconds);
+    o.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(opts.TotalTimeoutSeconds);
+    o.Retry.MaxRetryAttempts      = opts.MaxRetryAttempts;
+    // Polly requires SamplingDuration > 2× AttemptTimeout — enforce it automatically.
+    o.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(
+      Math.Max(opts.AttemptTimeoutSeconds * 2 + 1, 30));
   }
 }
