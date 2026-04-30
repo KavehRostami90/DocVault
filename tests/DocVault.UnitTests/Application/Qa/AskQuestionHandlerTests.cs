@@ -29,7 +29,11 @@ public sealed class AskQuestionHandlerTests
 
     private static Page<SearchResultItem> MakeSearchPage(params (Document doc, double score)[] items)
     {
-        var resultItems = items.Select(x => new SearchResultItem(x.doc, x.score)).ToList();
+        var resultItems = items
+            .Select(x => new SearchResultItem(
+                new DocumentSearchSummary(x.doc.Id, x.doc.Title, x.doc.Text ?? string.Empty),
+                x.score))
+            .ToList();
         return new Page<SearchResultItem>(resultItems, 1, 8, resultItems.Count);
     }
 

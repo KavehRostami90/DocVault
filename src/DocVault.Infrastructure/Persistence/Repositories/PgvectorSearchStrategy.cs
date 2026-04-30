@@ -1,9 +1,10 @@
-using System.Globalization;
 using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Search;
 using DocVault.Domain.Documents;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Pgvector;
+
 
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
@@ -29,8 +30,7 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
     float[]? queryVector,
     CancellationToken ct)
   {
-    var vectorLiteral = ToVectorLiteral(queryVector!);
-    var ownerFilter   = ownerId.HasValue ? "AND d.\"OwnerId\" = @ownerId" : string.Empty;
+    var ownerFilter = ownerId.HasValue ? "AND d.\"OwnerId\" = @ownerId" : string.Empty;
 
     // CTE: pick the single closest chunk per document, then join to Documents for owner filtering.
     var sql = $"""
@@ -38,10 +38,10 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
             SELECT
                 c."DocumentId",
                 c."Text"                                              AS chunk_text,
-                (c."Embedding" <=> {vectorLiteral})                   AS distance,
+                (c."Embedding" <=> @embedding)                        AS distance,
                 ROW_NUMBER() OVER (
                     PARTITION BY c."DocumentId"
-                    ORDER BY     c."Embedding" <=> {vectorLiteral}
+                    ORDER BY     c."Embedding" <=> @embedding
                 )                                                     AS rn
             FROM "DocumentChunks" c
             WHERE c."Embedding" IS NOT NULL
@@ -51,7 +51,7 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
             FROM   chunk_distances
             WHERE  rn = 1 AND distance < @threshold
         )
-        SELECT b."DocumentId", b.chunk_text, b.distance
+        SELECT b."DocumentId", b.chunk_text, b.distance, d."Title", d."FileName"
         FROM   best_per_doc b
         JOIN   "Documents" d ON d."Id" = b."DocumentId"
         WHERE  1=1 {ownerFilter}
@@ -62,11 +62,13 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
     await db.Database.OpenConnectionAsync(ct);
     try
     {
-      var conn    = (NpgsqlConnection)db.Database.GetDbConnection();
-      var matches = new List<(DocumentId Id, double Distance, string ChunkText)>();
+      var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+
+      var raw = new List<(DocumentId Id, string? ChunkText, double Distance, string Title, string FileName)>();
 
       using (var cmd = new NpgsqlCommand(sql, conn))
       {
+        cmd.Parameters.AddWithValue("embedding", new Vector(queryVector!));
         cmd.Parameters.AddWithValue("threshold", DistanceThreshold);
         cmd.Parameters.AddWithValue("size",      size);
         cmd.Parameters.AddWithValue("offset",    (page - 1) * size);
@@ -75,25 +77,22 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-          matches.Add((new DocumentId(reader.GetGuid(0)), reader.GetDouble(2), reader.GetString(1)));
+          raw.Add((
+            new DocumentId(reader.GetGuid(0)),
+            reader.IsDBNull(1) ? null : reader.GetString(1),
+            reader.GetDouble(2),
+            reader.GetString(3),
+            reader.GetString(4)));
       }
 
-      if (matches.Count == 0)
-        return new Page<SearchResultItem>([], page, size, 0);
+      var tags = await LoadTagsAsync(conn, raw.Select(r => r.Id.Value).ToArray(), ct);
 
-      var matchedIds  = matches.Select(m => m.Id).ToList();
-      var docs        = await db.Documents
-        .Include(d => d.Tags)
-        .Where(d => matchedIds.Contains(d.Id))
-        .ToListAsync(ct);
-
-      var metaById = matches.ToDictionary(m => m.Id);
-      var items = docs
-        .OrderBy(d => metaById[d.Id].Distance)
-        .Select(d => new SearchResultItem(
-            d,
-            Math.Round(1.0 - metaById[d.Id].Distance, 4),
-            metaById[d.Id].ChunkText))
+      var items = raw
+        .Select(r => new SearchResultItem(
+            new DocumentSearchSummary(r.Id, r.Title, r.FileName,
+                tags.GetValueOrDefault(r.Id.Value, [])),
+            Math.Round(1.0 - r.Distance, 4),
+            r.ChunkText))
         .ToList();
 
       return new Page<SearchResultItem>(items, page, size, items.Count);
@@ -104,9 +103,32 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
     }
   }
 
-  private static string ToVectorLiteral(float[] v)
+  private static async Task<Dictionary<Guid, IReadOnlyList<string>>> LoadTagsAsync(
+    NpgsqlConnection conn, Guid[] docIds, CancellationToken ct)
   {
-    var values = string.Join(",", v.Select(f => f.ToString("G9", CultureInfo.InvariantCulture)));
-    return $"'[{values}]'::vector";
+    var result = new Dictionary<Guid, IReadOnlyList<string>>();
+    if (docIds.Length == 0) return result;
+
+    using var cmd = new NpgsqlCommand(
+      """
+      SELECT dt."DocumentId", t."Name"
+      FROM   "DocumentTag" dt
+      JOIN   "Tags" t ON t."Id" = dt."TagsId"
+      WHERE  dt."DocumentId" = ANY(@ids)
+      """, conn);
+    cmd.Parameters.AddWithValue("ids", docIds);
+
+    using var reader = await cmd.ExecuteReaderAsync(ct);
+    var temp = new Dictionary<Guid, List<string>>();
+    while (await reader.ReadAsync(ct))
+    {
+      var id   = reader.GetGuid(0);
+      var name = reader.GetString(1);
+      if (!temp.TryGetValue(id, out var list))
+        temp[id] = list = [];
+      list.Add(name);
+    }
+    foreach (var kvp in temp) result[kvp.Key] = kvp.Value;
+    return result;
   }
 }

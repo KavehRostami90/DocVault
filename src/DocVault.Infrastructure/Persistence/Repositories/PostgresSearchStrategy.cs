@@ -33,23 +33,37 @@ internal sealed class PostgresSearchStrategy : IDocumentSearchStrategy
       return new Page<SearchResultItem>([], page, size, 0);
 
     var query = db.Documents
-      .Include(d => d.Tags)
       .Where(d => EF.Functions.ToTsVector("english", d.Text)
         .Matches(EF.Functions.ToTsQuery("english", tsQuery)));
 
     if (ownerId.HasValue)
       query = query.Where(d => d.OwnerId == ownerId);
 
-    var docs = await query.ToListAsync(ct);
+    var totalCount = await query.LongCountAsync(ct);
+    if (totalCount == 0)
+      return new Page<SearchResultItem>([], page, size, 0);
 
-    var items = docs
-      .Select(d => new SearchResultItem(d, DocumentScorer.Compute(d, terms)))
-      .OrderByDescending(i => i.Score)
+    var projected = await query
+      .OrderByDescending(d => EF.Functions.ToTsVector("english", d.Text)
+          .Rank(EF.Functions.ToTsQuery("english", tsQuery)))
       .Skip((page - 1) * size)
       .Take(size)
+      .Select(d => new
+      {
+        d.Id,
+        d.Title,
+        d.FileName,
+        Tags = d.Tags.Select(t => t.Name).ToList()
+      })
+      .ToListAsync(ct);
+
+    var items = projected
+      .Select(r => new SearchResultItem(
+          new DocumentSearchSummary(r.Id, r.Title, r.FileName, r.Tags),
+          1.0))
       .ToList();
 
-    return new Page<SearchResultItem>(items, page, size, docs.Count);
+    return new Page<SearchResultItem>(items, page, size, totalCount);
   }
 
   // Strips tsquery special chars and appends :* for prefix matching.
