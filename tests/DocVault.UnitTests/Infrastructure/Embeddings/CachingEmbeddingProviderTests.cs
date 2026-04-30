@@ -5,6 +5,7 @@ using DocVault.Infrastructure.Embeddings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using Xunit;
 
 namespace DocVault.UnitTests.Infrastructure.Embeddings;
 
