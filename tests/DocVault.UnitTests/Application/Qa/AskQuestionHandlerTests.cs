@@ -58,9 +58,9 @@ public sealed class AskQuestionHandlerTests
         // Cache always misses so tests exercise the real search path.
         searchResultCache
             .Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((Page<SearchResultItem>?)null);
+            .ReturnsAsync((SearchPageResult?)null);
         searchResultCache
-            .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<Page<SearchResultItem>>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<SearchPageResult>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var searchHandler = new SearchDocumentsHandler(docRepo.Object, embeddingProvider.Object, searchResultCache.Object, searchHandlerLogger.Object);

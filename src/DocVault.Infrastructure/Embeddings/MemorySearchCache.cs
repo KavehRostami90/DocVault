@@ -1,5 +1,4 @@
 using DocVault.Application.Abstractions.Embeddings;
-using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Search;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -14,28 +13,42 @@ namespace DocVault.Infrastructure.Embeddings;
 public sealed class MemorySearchCache : ISearchResultCache, IDisposable
 {
     private readonly MemoryCache _cache;
-    private readonly SearchCacheOptions _options;
+    private readonly bool _isEnabled;
+    private readonly TimeSpan _ttl;
 
     public MemorySearchCache(IOptions<SearchCacheOptions> options)
     {
-        _options = options.Value;
-        _cache   = new MemoryCache(new MemoryCacheOptions { SizeLimit = _options.MaxEntries });
+        var configured = options.Value;
+
+        _isEnabled = configured.IsEnabled;
+        _ttl = TimeSpan.FromSeconds(Math.Max(1, configured.AbsoluteExpirationSeconds));
+
+        _cache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = Math.Max(1, configured.MaxEntries)
+        });
     }
 
-    public Task<Page<SearchResultItem>?> GetAsync(string key, CancellationToken cancellationToken = default)
+    public Task<SearchPageResult?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
-        _cache.TryGetValue(key, out Page<SearchResultItem>? page);
-        return Task.FromResult(page);
+        if (!_isEnabled)
+            return Task.FromResult<SearchPageResult?>(null);
+
+        _cache.TryGetValue(key, out SearchPageResult? result);
+        return Task.FromResult(result);
     }
 
-    public Task SetAsync(string key, Page<SearchResultItem> page, TimeSpan ttl, CancellationToken cancellationToken = default)
+    public Task SetAsync(string key, SearchPageResult result, CancellationToken cancellationToken = default)
     {
+        if (!_isEnabled)
+            return Task.CompletedTask;
+
         var entryOptions = new MemoryCacheEntryOptions
         {
-            AbsoluteExpirationRelativeToNow = ttl,
+            AbsoluteExpirationRelativeToNow = _ttl,
             Size = 1,
         };
-        _cache.Set(key, page, entryOptions);
+        _cache.Set(key, result, entryOptions);
         return Task.CompletedTask;
     }
 

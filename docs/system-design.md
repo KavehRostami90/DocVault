@@ -29,9 +29,11 @@ Orchestrates use cases. Depends on Domain; no web or EF dependencies.
 | `IFileStorage` | Binary blob read/write |
 | `ITextExtractor` | Plaintext extraction from streams |
 | `IEmbeddingProvider` | Vector embedding generation (`float[]`) |
+| `ISearchResultCache` | Short-lived cache for search result pages; keyed by `search:{userId}:{query}:{page}:{size}` |
 | `IWorkQueue<T>` | Background task queue |
 | `IDomainEventDispatcher` | In-process domain event routing |
 | `IIngestionPipeline` | Runs all ingestion stages, returns `IngestionResult` |
+| `IQuestionAnsweringService` | Generates answers from a question + context chunks; `AnswerAsync` (blocking) + `AnswerStreamAsync` (streaming `IAsyncEnumerable<string>`) |
 
 `IIngestionPipeline.RunAsync` returns `IngestionResult` — a record carrying both the extracted `Text` string and the `Embedding` float array.
 
@@ -64,7 +66,7 @@ Orchestrates use cases. Depends on Domain; no web or EF dependencies.
 | `ITextExtractor` | `DocxTextExtractor` | DOCX extraction via DocumentFormat.OpenXml |
 | `ITextExtractor` | `ImageTextExtractor` | OCR via Tesseract 5 |
 | `IDomainEventDispatcher` | `InProcessDomainEventDispatcher` | Synchronous dispatch |
-| `IDocumentSearchStrategy` | `PgvectorSearchStrategy` | Cosine similarity (`<=>`) with pgvector HNSW index |
+| `IDocumentSearchStrategy` | `PgvectorSearchStrategy` | ANN prefetch on `DocumentChunks` (HNSW index) + `DISTINCT ON` for best chunk per document + cosine similarity `<=>` |
 | `IDocumentSearchStrategy` | `PostgresSearchStrategy` | `tsvector` full-text search with `ts_rank` |
 | `IDocumentSearchStrategy` | `InMemorySearchStrategy` | LINQ keyword match (tests / SQLite) |
 
@@ -77,6 +79,7 @@ Orchestrates use cases. Depends on Domain; no web or EF dependencies.
 | Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/guest`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me` |
 | Documents | `POST /documents`, `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/preview`, `GET /documents/{id}/download`, `GET /documents/{id}/extracted-text`, `PUT /documents/{id}/tags`, `DELETE /documents/{id}` |
 | Search | `POST /search/documents` |
+| QA | `POST /qa/ask` (blocking), `POST /qa/ask/stream` (SSE streaming) |
 | Tags | `GET /tags` |
 | Imports | `POST /imports`, `GET /imports/{jobId}` |
 | Admin | `GET /admin/documents`, `DELETE /admin/documents/{id}`, `POST /admin/documents/{id}/reindex`, `GET /admin/documents/{id}/preview`, `GET /admin/documents/{id}/download`, `GET /admin/users`, `DELETE /admin/users/{id}`, `PUT /admin/users/{id}/roles`, `GET /admin/stats` |
@@ -131,20 +134,75 @@ Search uses a **chain-of-responsibility** pattern. `EfDocumentRepository.SearchA
 
 ```
 SearchDocumentsHandler
+  ├─ ISearchResultCache.GetAsync(key) → cache hit? return immediately
   ├─ Try: queryVector = await IEmbeddingProvider.EmbedAsync(query)
   │        (on failure: log warning, queryVector = null → graceful fallback)
   └─ IDocumentRepository.SearchAsync(terms, page, size, ownerId, queryVector)
          │
-         ├─ PgvectorSearchStrategy  ← IsRelational() && queryVector != null
-         │    Raw SQL: ORDER BY "Embedding" <=> '[…]'::vector  LIMIT/OFFSET
-         │    HNSW index (vector_cosine_ops) accelerates ANN lookup
+         ├─ HybridSearchStrategy   ← IsRelational() && queryVector != null && terms.Length > 0
+         │    vec_candidates CTE: ORDER BY <=> LIMIT 250 (HNSW index)
+         │    vec_best CTE: DISTINCT ON DocumentId (best chunk per doc)
+         │    fts_candidates CTE: ts_rank on SearchVector (GIN index)
+         │    Final: Reciprocal Rank Fusion (K=60) over both candidate sets
          │
-         ├─ PostgresSearchStrategy  ← IsRelational() && queryVector == null
-         │    to_tsquery / ts_rank on SearchVector (tsvector column)
+         ├─ PgvectorSearchStrategy ← IsRelational() && queryVector != null
+         │    vec_candidates CTE: ORDER BY <=> LIMIT 250 (HNSW index)
+         │    vec_best CTE: DISTINCT ON DocumentId (best chunk per doc)
+         │    Final: ORDER BY distance, JOIN Documents for metadata
          │
-         └─ InMemorySearchStrategy  ← fallback (non-relational / tests)
-              LINQ Contains across Title + Text
+         ├─ PostgresSearchStrategy ← IsRelational() && queryVector == null
+         │    to_tsquery / ts_rank on SearchVector (tsvector column, GIN index)
+         │
+         └─ InMemorySearchStrategy ← fallback (non-relational / tests)
+              LINQ Contains across Title + Text; passes d.Text as MatchedChunkText
+  │
+  └─ ISearchResultCache.SetAsync(key, result, ttl=2min)
 ```
+
+**HNSW index safety rule:** The HNSW index fires only when the innermost CTE that drives `ORDER BY <=> @embedding` has no JOIN or WHERE clauses. Both vector strategies isolate the ANN pass into a clean `vec_candidates` CTE (`ORDER BY ... LIMIT AnnPrefetch`) before any ownership JOIN — adding any filter before the ORDER BY causes the planner to fall back to a full sequential scan.
+
+**Search DTO projection:** `DocumentSearchSummary` carries only `Id`, `Title`, `FileName`, `Tags` — the full `Text` column (potentially megabytes) is never loaded during search. The 120-character snippet comes from `SearchResultItem.MatchedChunkText` (the precomputed chunk text from the vector search), not from the document body.
+
+## Question Answering (RAG)
+
+`AskQuestionHandler` orchestrates the RAG pipeline without re-chunking:
+
+```
+POST /qa/ask  or  POST /qa/ask/stream
+        │
+        ▼
+AskQuestionHandler.HandleAsync / HandleStreamAsync
+  ├─ Generate question embedding via IEmbeddingProvider
+  ├─ Semantic vector search (optionally scoped to a single documentId)
+  │    → returns SearchResultItem list, each carrying MatchedChunkText
+  │       (pre-indexed chunk text from DocumentChunks — no re-chunking!)
+  ├─ Score chunks by cosine distance; take top MaxContexts (default 5)
+  ├─ IQuestionAnsweringService.AnswerAsync / AnswerStreamAsync
+  │    → builds system prompt + chunk context, calls LLM
+  └─ Return AskResponse { Answer, Citations } | IAsyncEnumerable<string> tokens
+```
+
+**Implementations:**
+
+| Service | Description |
+|---|---|
+| `OpenAiQuestionAnsweringService` | OpenAI-compatible chat endpoint; `AnswerStreamAsync` sets `stream:true`, parses SSE `data:` lines, yields token deltas; configurable `TimeoutSeconds` (default 120) |
+| `FallbackQuestionAnsweringService` | Extractive — returns the top-scored `MatchedChunkText` directly; streaming mode yields it as a single event |
+
+**Streaming SSE format** (`POST /qa/ask/stream`):
+
+```
+data: "According"
+
+data: " to"
+
+data: " the document…"
+
+data: [DONE]
+
+```
+
+Each `data:` line carries a JSON-encoded token string. The endpoint sets `Content-Type: text/event-stream` and `X-Accel-Buffering: no` (disables nginx buffering). The frontend uses `fetch` + `ReadableStream` (not `EventSource`) to attach the Bearer token header.
 
 ## Domain Invariants
 

@@ -104,10 +104,13 @@ public sealed partial class OpenAiQuestionAnsweringService : IQuestionAnsweringS
     await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
     using var reader        = new StreamReader(stream);
 
-    while (!reader.EndOfStream && !cts.Token.IsCancellationRequested)
+    while (!cts.Token.IsCancellationRequested)
     {
       var line = await reader.ReadLineAsync(cts.Token);
-      if (string.IsNullOrEmpty(line) || !line.StartsWith("data: ", StringComparison.Ordinal))
+      if (line is null)
+        break;
+
+      if (line.Length == 0 || !line.StartsWith("data: ", StringComparison.Ordinal))
         continue;
 
       var data = line["data: ".Length..];

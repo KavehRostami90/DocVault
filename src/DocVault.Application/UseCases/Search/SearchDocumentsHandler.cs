@@ -10,7 +10,7 @@ namespace DocVault.Application.UseCases.Search;
 /// Handles document search. Embeds the query with the configured provider for semantic
 /// (pgvector cosine similarity) search. If embedding fails (e.g. Ollama not running),
 /// the search falls back to PostgreSQL full-text search automatically.
-/// Results are cached for <see cref="ISearchResultCache.SetAsync"/> TTL to reduce
+/// Results are cached via <see cref="ISearchResultCache"/> to reduce
 /// repeated embedding calls and database load for popular queries.
 /// </summary>
 public sealed partial class SearchDocumentsHandler : IQueryHandler<SearchDocumentsQuery, Result<SearchPageResult>>
@@ -39,12 +39,7 @@ public sealed partial class SearchDocumentsHandler : IQueryHandler<SearchDocumen
     var cacheKey = BuildCacheKey(ownerId, query.Query, query.Page, query.Size);
     var cached   = await _cache.GetAsync(cacheKey, cancellationToken);
     if (cached is not null)
-    {
-      var hasTermsCached = query.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 0;
-      // Mode cannot be determined without re-embedding; report Hybrid as a conservative default.
-      var cachedMode = hasTermsCached ? SearchMode.Hybrid : SearchMode.Semantic;
-      return Result<SearchPageResult>.Success(new SearchPageResult(cached, cachedMode));
-    }
+      return Result<SearchPageResult>.Success(cached);
 
     // Try to embed the query for semantic search; fall back to keyword search on failure.
     float[]? queryVector = null;
@@ -64,14 +59,19 @@ public sealed partial class SearchDocumentsHandler : IQueryHandler<SearchDocumen
              : hasTerms           ? SearchMode.Hybrid
              :                      SearchMode.Semantic;
 
-    await _cache.SetAsync(cacheKey, page, TimeSpan.FromSeconds(120), cancellationToken);
+    var result = new SearchPageResult(page, mode);
+    await _cache.SetAsync(cacheKey, result, cancellationToken);
 
-    return Result<SearchPageResult>.Success(new SearchPageResult(page, mode));
+    return Result<SearchPageResult>.Success(result);
   }
 
   private static string BuildCacheKey(Guid? ownerId, string query, int page, int size)
   {
-    var normalised = query.Trim().ToLowerInvariant();
+    var normalised = string.Join(' ', query
+      .Trim()
+      .ToLowerInvariant()
+      .Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
     return $"search:{ownerId?.ToString() ?? "admin"}:{normalised}:{page}:{size}";
   }
 
