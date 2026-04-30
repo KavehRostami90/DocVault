@@ -1,7 +1,6 @@
 using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Background.Queue;
-using DocVault.Application.Common.Paging;
 using DocVault.Application.UseCases.Search;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Queue;
@@ -194,10 +193,10 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
   /// </summary>
   private sealed class NoOpSearchResultCache : ISearchResultCache
   {
-    public Task<Page<SearchResultItem>?> GetAsync(string key, CancellationToken ct) =>
-      Task.FromResult<Page<SearchResultItem>?>(null);
+    public Task<SearchPageResult?> GetAsync(string key, CancellationToken ct) =>
+      Task.FromResult<SearchPageResult?>(null);
 
-    public Task SetAsync(string key, Page<SearchResultItem> page, TimeSpan expiry, CancellationToken ct) =>
+    public Task SetAsync(string key, SearchPageResult result, CancellationToken ct) =>
       Task.CompletedTask;
   }
 }
