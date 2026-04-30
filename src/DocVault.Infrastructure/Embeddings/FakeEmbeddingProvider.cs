@@ -28,6 +28,19 @@ public sealed class FakeEmbeddingProvider : IEmbeddingProvider
   /// <param name="cancellationToken">Cancellation token (unused — computation is synchronous).</param>
   /// <returns>An L2-normalised float array of length 768.</returns>
   public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
+    => Task.FromResult(EmbedCore(text));
+
+  public Task<IReadOnlyList<float[]>> EmbedBatchAsync(
+    IReadOnlyList<string> texts,
+    CancellationToken cancellationToken = default)
+  {
+    var results = new float[texts.Count][];
+    for (var i = 0; i < texts.Count; i++)
+      results[i] = EmbedCore(texts[i]);
+    return Task.FromResult<IReadOnlyList<float[]>>(results);
+  }
+
+  private static float[] EmbedCore(string text)
   {
     var vector = new float[Dimensions];
 
@@ -43,7 +56,7 @@ public sealed class FakeEmbeddingProvider : IEmbeddingProvider
       for (var i = 0; i < Dimensions; i++)
         vector[i] /= norm;
 
-    return Task.FromResult(vector);
+    return vector;
   }
 
   /// <summary>

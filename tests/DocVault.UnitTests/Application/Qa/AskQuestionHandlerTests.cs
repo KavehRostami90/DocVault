@@ -29,7 +29,12 @@ public sealed class AskQuestionHandlerTests
 
     private static Page<SearchResultItem> MakeSearchPage(params (Document doc, double score)[] items)
     {
-        var resultItems = items.Select(x => new SearchResultItem(x.doc, x.score)).ToList();
+        var resultItems = items
+            .Select(x => new SearchResultItem(
+                new DocumentSearchSummary(x.doc.Id, x.doc.Title, x.doc.FileName, []),
+                x.score,
+                MatchedChunkText: x.doc.Text))
+            .ToList();
         return new Page<SearchResultItem>(resultItems, 1, 8, resultItems.Count);
     }
 
@@ -41,6 +46,7 @@ public sealed class AskQuestionHandlerTests
     {
         var docRepo                = new Mock<IDocumentRepository>();
         var embeddingProvider      = new Mock<IEmbeddingProvider>();
+        var searchResultCache      = new Mock<ISearchResultCache>();
         var searchHandlerLogger    = new Mock<ILogger<SearchDocumentsHandler>>();
         var askQuestionHandlerLogger = new Mock<ILogger<AskQuestionHandler>>();
 
@@ -49,7 +55,15 @@ public sealed class AskQuestionHandlerTests
             .Setup(e => e.EmbedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new float[768]);
 
-        var searchHandler = new SearchDocumentsHandler(docRepo.Object, embeddingProvider.Object, searchHandlerLogger.Object);
+        // Cache always misses so tests exercise the real search path.
+        searchResultCache
+            .Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SearchPageResult?)null);
+        searchResultCache
+            .Setup(c => c.SetAsync(It.IsAny<string>(), It.IsAny<SearchPageResult>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var searchHandler = new SearchDocumentsHandler(docRepo.Object, embeddingProvider.Object, searchResultCache.Object, searchHandlerLogger.Object);
         var qaService     = new Mock<IQuestionAnsweringService>();
         var handler       = new AskQuestionHandler(searchHandler, qaService.Object, askQuestionHandlerLogger.Object);
 
@@ -223,16 +237,16 @@ public sealed class AskQuestionHandlerTests
     {
         var (handler, docRepo, qaService) = BuildHandler();
 
-        // 500 words × ~5 chars each ≈ 2 500 characters; with a 700-char window this
-        // produces 4+ chunks, ensuring MaxContexts trimming is actually exercised.
-        const int WordCount  = 500;
-        var longText = string.Join(" ", Enumerable.Repeat("word", WordCount));
-        var doc      = MakeIndexedDocument(DocumentId.New(), "Big Doc", longText);
+        // Create more docs than MaxContexts so the limiting behaviour is actually exercised.
+        const int maxContexts = 2;
+        var docs = Enumerable.Range(0, maxContexts + 2)
+            .Select(i => MakeIndexedDocument(DocumentId.New(), $"Doc {i}", $"Content about topic {i} with useful detail."))
+            .ToArray();
 
         docRepo.Setup(r => r.SearchAsync(
                 It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
                 It.IsAny<Guid?>(), It.IsAny<float[]?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeSearchPage((doc, 0.9)));
+            .ReturnsAsync(MakeSearchPage(docs.Select((d, i) => (d, 0.9 - i * 0.05)).ToArray()));
 
         IReadOnlyList<QaContextChunk>? capturedContexts = null;
         qaService
@@ -242,10 +256,7 @@ public sealed class AskQuestionHandlerTests
             .Callback<string, IReadOnlyList<QaContextChunk>, CancellationToken>((_, ctxs, _) => capturedContexts = ctxs)
             .ReturnsAsync(new QaAnswerResult("Answer", true));
 
-        // 2 is less than the number of chunks produced by WordCount words, so the
-        // limiting behaviour is actually exercised.
-        const int maxContexts = 2;
-        await handler.HandleAsync(new AskQuestionQuery("word content", MaxContexts: maxContexts));
+        await handler.HandleAsync(new AskQuestionQuery("topic content", MaxContexts: maxContexts));
 
         Assert.NotNull(capturedContexts);
         Assert.True(

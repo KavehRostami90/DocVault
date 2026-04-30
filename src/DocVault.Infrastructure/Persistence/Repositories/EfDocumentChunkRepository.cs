@@ -14,6 +14,8 @@ public sealed class EfDocumentChunkRepository : IDocumentChunkRepository
   /// <summary>
   /// Replaces all chunks for a document atomically via the EF change tracker.
   /// No SaveChanges is called here — the caller (IndexingWorker via IUnitOfWork) commits the unit of work.
+  /// The command timeout for the resulting bulk INSERT is controlled by
+  /// <see cref="DatabaseOptions.CommandTimeoutSeconds"/> configured at DbContext registration.
   /// </summary>
   public async Task ReplaceAsync(DocumentId documentId, IReadOnlyList<DocumentChunk> chunks, CancellationToken ct = default)
   {

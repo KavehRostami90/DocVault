@@ -415,8 +415,9 @@ dotnet ef database update \
 - **Upload & store** — multipart file upload with SHA-256 deduplication; supports PDF, DOCX, Markdown, plain text, and images
 - **Background indexing** — an async `BackgroundService` worker extracts text, runs OCR on images, chunks the content into overlapping windows, and generates a vector embedding per chunk; crash-safe with startup recovery
 - **Chunk-level vector indexing** — document text is split into 400-word overlapping chunks (80-word overlap); each chunk is independently embedded and stored in the `DocumentChunks` table with an HNSW index — enabling precise retrieval from long documents where a single document-level embedding would dilute the signal
-- **Semantic search** — pgvector cosine similarity search when Ollama is available; automatically falls back to PostgreSQL full-text (`tsvector`) or in-memory keyword search
-- **AI question answering** — RAG pipeline over your documents: retrieves relevant chunks, scores them with a hybrid semantic + lexical approach, and sends them to an LLM for a grounded answer with citations
+- **Semantic search** — pgvector cosine similarity search when Ollama is available; automatically falls back to PostgreSQL full-text (`tsvector`) or in-memory keyword search; results never load the full document text, using lightweight DTO projection instead
+- **Search result caching** — repeated queries for the same query, page, and user are served from a short-lived in-memory cache (2-minute TTL), avoiding redundant embedding calls and vector database round-trips
+- **AI question answering** — RAG pipeline over your documents: retrieves pre-indexed chunks from the `DocumentChunks` table at query time (no re-chunking overhead), sends the most relevant context to an LLM, and **streams the answer token-by-token** via SSE for immediate perceived response; scoped to a single document or your entire library
 - **Realtime status** — Server-Sent Events (SSE) stream per document so the UI updates live as indexing progresses
 - **Role-based access** — `Admin`, `User`, and `Guest` (ephemeral 24 h) roles with JWT + httpOnly cookie refresh
 - **User profiles** — display name editing, password change, and admin-level password reset
@@ -568,6 +569,7 @@ Interactive documentation: **Scalar UI** at `/scalar/v1` · **Swagger UI** at `/
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `POST` | `/qa/ask` | Authenticated | RAG-based question answering. Body: `{ question, documentId? }`. Returns a generated answer and up to three citations (document title, excerpt, score). Optionally scoped to a single document. |
+| `POST` | `/qa/ask/stream` | Authenticated | Streaming variant of `/qa/ask`. Returns `text/event-stream`. Each SSE event carries a token delta (`data: "token"\n\n`); the stream ends with `data: [DONE]\n\n`. Ideal for rendering the answer incrementally as it is generated. |
 
 ### Tags
 
@@ -684,8 +686,8 @@ Search uses a chain-of-responsibility pattern. The first strategy whose `CanHand
 
 | Strategy | Activated when | Method |
 |---|---|---|
-| `HybridSearchStrategy` | PostgreSQL + embedding + text terms present | Chunk-level cosine similarity on `DocumentChunks` fused with `tsvector` FTS via Reciprocal Rank Fusion (RRF, K=60); top-50 candidates per source |
-| `PgvectorSearchStrategy` | PostgreSQL + embedding available (no text terms) | Chunk-level cosine similarity `<=>` on `DocumentChunks` — best chunk per document via `ROW_NUMBER() OVER PARTITION BY` |
+| `HybridSearchStrategy` | PostgreSQL + embedding + text terms present | ANN prefetch on `DocumentChunks` (HNSW index) fused with `tsvector` FTS via Reciprocal Rank Fusion (RRF, K=60); best chunk per document via `DISTINCT ON` |
+| `PgvectorSearchStrategy` | PostgreSQL + embedding available (no text terms) | ANN prefetch on `DocumentChunks` (HNSW index); best chunk per document via `DISTINCT ON` |
 | `PostgresSearchStrategy` | PostgreSQL, no embedding | `tsvector` full-text with `ts_rank` |
 | `InMemorySearchStrategy` | In-memory DB (tests) | LINQ `Contains` keyword match |
 
@@ -695,13 +697,29 @@ If Ollama is unreachable when a search query arrives, `IEmbeddingProvider` throw
 
 ### Chunk-level indexing
 
-The `DocumentChunks` table stores one embedding per text window instead of one per document. Each chunk carries its `StartChar`/`EndChar` offsets back into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks.Embedding` column has its own HNSW index.
+The `DocumentChunks` table stores one embedding per text window instead of one per document. Each chunk carries its `StartChar`/`EndChar` offsets back into the original extracted text so matched passages can be surfaced verbatim. The `DocumentChunks.Embedding` column has an HNSW index (`vector_cosine_ops`).
+
+### HNSW-safe query pattern
+
+Both vector strategies use an **ANN-prefetch + `DISTINCT ON`** pattern to ensure the HNSW index is used:
+
+1. **`vec_candidates` CTE** — `ORDER BY "Embedding" <=> @embedding LIMIT n` with no JOINs or WHERE clauses — this is the only form that engages the HNSW index.
+2. **`vec_best` CTE** — JOIN ownership filter, then `DISTINCT ON ("DocumentId") ORDER BY "DocumentId", distance` to pick the single closest chunk per document.
+3. **Final SELECT** — JOIN back to `Documents` to retrieve metadata.
+
+Adding any WHERE or JOIN to the CTE that drives the `ORDER BY <=>` prevents the planner from using the index. The strategies over-fetch (`AnnPrefetch = CandidateLimit × 5 = 250`) to compensate for rows discarded by ownership filtering after the ANN pass.
 
 ### Hybrid search
 
-`PgvectorSearchStrategy` now queries `DocumentChunks` directly — it groups by document and picks the single closest chunk per document using a `ROW_NUMBER() OVER (PARTITION BY DocumentId ORDER BY distance)` CTE, then joins back to `Documents` for ownership filtering.
+`HybridSearchStrategy` fuses chunk-level vector similarity and PostgreSQL full-text search rankings using **Reciprocal Rank Fusion (RRF, K=60)**. It collects the top-250 ANN vector candidates (best chunk per document via `DISTINCT ON`) and the top-50 FTS candidates, then scores each document as `rrf = 1/(60 + vec_rank) + 1/(60 + fts_rank)`. Documents that appear in only one list still receive a partial score.
 
-`HybridSearchStrategy` fuses chunk-level vector similarity and PostgreSQL full-text search rankings using **Reciprocal Rank Fusion (RRF, K=60)**. It collects the top-50 vector candidates (best chunk per document) and the top-50 FTS candidates, then scores each document as `rrf = 1/(60 + vec_rank) + 1/(60 + fts_rank)`. Documents that appear in only one list still receive a partial score. The hybrid strategy takes priority over the pure-vector strategy whenever both an embedding and at least one text term are present.
+### Search result caching
+
+`SearchDocumentsHandler` checks `ISearchResultCache` before generating an embedding or hitting the database. The cache key is `search:{userId}:{normalizedQuery}:{page}:{size}` with a 2-minute TTL. The in-memory `MemorySearchCache` implementation uses `IMemoryCache` with a configurable entry cap. In integration tests, a `NoOpSearchResultCache` is injected to prevent stale results across test classes.
+
+### Search DTO projection
+
+Search results never load `Document.Text` (which can be several megabytes for large files). The `DocumentSearchSummary` DTO carries only `Id`, `Title`, `FileName`, and `Tags`. The 120-character snippet shown in results comes from the matched chunk text retrieved by the vector search, not the full document body.
 
 ---
 
@@ -709,18 +727,19 @@ The `DocumentChunks` table stores one embedding per text window instead of one p
 
 The QA pipeline in `AskQuestionHandler`:
 
-1. **Retrieve** — runs a semantic search for the question across the document library (optionally scoped to a single document by ID)
-2. **Chunk** — splits retrieved document text into 700-character windows with 120-character overlap
-3. **Score** — hybrid scoring: **70 % semantic similarity** (cosine distance of the chunk embedding vs. the question embedding) + **30 % lexical overlap** (term frequency matching)
-4. **Generate** — sends the top-scoring chunks as context to the LLM with a strict system prompt: answer only from the provided context, never hallucinate, cite your sources
-5. **Respond** — returns the generated answer plus up to three citation objects (document title, text excerpt, relevance score)
+1. **Retrieve** — runs a semantic search for the question across the document library (optionally scoped to a single document by ID), respecting ownership rules
+2. **Context** — uses the pre-indexed `MatchedChunkText` from the `DocumentChunks` table already returned by the vector search — **no re-chunking at query time**
+3. **Generate** — sends the top-scoring chunks as context to the LLM with a strict system prompt: answer only from the provided context, never hallucinate, cite your sources
+4. **Respond** — two modes:
+   - **Blocking** (`POST /qa/ask`) — waits for the full answer then returns it with up to three citation objects (document title, excerpt, relevance score)
+   - **Streaming** (`POST /qa/ask/stream`) — yields the answer token-by-token over SSE (`text/event-stream`) for immediate perceived response; ends with `data: [DONE]\n\n`
 
 **Implementations:**
 
 | Service | Description |
 |---|---|
-| `OpenAiQuestionAnsweringService` | Calls any OpenAI-compatible chat/completions endpoint (defaults to local Ollama `llama3.1`) |
-| `FallbackQuestionAnsweringService` | Extractive fallback — returns the top-scored chunk directly as the answer when no LLM is configured |
+| `OpenAiQuestionAnsweringService` | Calls any OpenAI-compatible chat/completions endpoint (defaults to local Ollama `llama3.1`); supports both blocking (`AnswerAsync`) and streaming (`AnswerStreamAsync`) with a configurable timeout (default 120 s) |
+| `FallbackQuestionAnsweringService` | Extractive fallback — returns the top-scored chunk directly as the answer when no LLM is configured; streaming mode yields the single answer in one event |
 
 ---
 
@@ -810,6 +829,10 @@ All settings can be overridden via environment variables using the standard `__`
 | `Ollama:Dimensions` | `768` | Embedding vector dimensions. |
 | `OpenAi:ApiKey` | — | API key for the QA / LLM endpoint. |
 | `OpenAi:BaseUrl` | `http://localhost:11434/v1` | LLM endpoint base URL. |
+| `OpenAi:TimeoutSeconds` | `120` | Timeout for LLM requests (blocking and streaming). |
+| `SearchCache:IsEnabled` | `true` | Enable/disable the search result cache. Set to `false` to disable caching entirely. |
+| `SearchCache:AbsoluteExpirationSeconds` | `120` | Cache entry TTL in seconds (2 minutes). |
+| `SearchCache:MaxEntries` | `1000` | Maximum number of cached search result pages. |
 | `Cors:AllowedOrigins` | `*` | Comma-separated allowed origins. Set to specific URL in production to enable cookie CORS. |
 
 ---

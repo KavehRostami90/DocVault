@@ -32,13 +32,13 @@ public sealed class IngestionPipeline : IIngestionPipeline
     if (string.IsNullOrWhiteSpace(text))
       return new IngestionResult(string.Empty, []);
 
-    var textChunks      = _chunking.Chunk(text);
-    var chunkEmbeddings = new List<ChunkEmbedding>(textChunks.Count);
-    foreach (var chunk in textChunks)
-    {
-      var vector = await _embedding.GenerateAsync(chunk.Text, cancellationToken);
-      chunkEmbeddings.Add(new ChunkEmbedding(chunk, vector));
-    }
+    var textChunks = _chunking.Chunk(text);
+    var texts      = textChunks.Select(c => c.Text).ToList();
+    var vectors    = await _embedding.GenerateBatchAsync(texts, cancellationToken);
+
+    var chunkEmbeddings = textChunks
+      .Zip(vectors, (chunk, vector) => new ChunkEmbedding(chunk, vector))
+      .ToList();
 
     await _index.IndexAsync(text, chunkEmbeddings[0].Embedding, cancellationToken);
 

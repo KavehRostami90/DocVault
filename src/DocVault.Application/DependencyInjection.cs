@@ -13,13 +13,14 @@ using DocVault.Application.UseCases.Imports.StartImportJob;
 using DocVault.Application.UseCases.Qa;
 using DocVault.Application.UseCases.Search;
 using DocVault.Application.UseCases.Tags.ListTags;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace DocVault.Application;
 
 public static class DependencyInjection
 {
-  public static IServiceCollection AddApplication(this IServiceCollection services)
+  public static IServiceCollection AddApplication(this IServiceCollection services, IConfiguration configuration)
   {
     services.AddScoped<ImportDocumentHandler>();
     services.AddScoped<GetDocumentHandler>();
@@ -42,6 +43,8 @@ public static class DependencyInjection
     services.AddSingleton<EmbeddingStage>();
     services.AddSingleton<IndexStage>();
     services.AddSingleton<IIngestionPipeline, IngestionPipeline>();
+
+    services.Configure<IndexingWorkerOptions>(configuration.GetSection(IndexingWorkerOptions.SectionName));
 
     services.AddHostedService<IndexingWorker>();
 

@@ -49,11 +49,9 @@ public static class SearchEndpoints
 
   private static SearchResultItemResponse ToResponse(SearchResultItem item)
   {
-    // Prefer the matched chunk text — it's the semantically relevant portion.
-    // Fall back to the beginning of the full document text when no chunk is available.
-    var raw     = item.MatchedChunkText ?? item.Document.Text ?? string.Empty;
+    var raw     = item.MatchedChunkText ?? string.Empty;
     var plain   = HtmlTagPattern.Replace(raw, string.Empty).Trim();
     var snippet = plain[..Math.Min(plain.Length, 120)];
-    return new(item.Document.Id.Value, item.Document.Title, snippet, item.Score);
+    return new(item.Document.Id.Value, item.Document.Title, item.Document.FileName, item.Document.Tags, snippet, item.Score);
   }
 }

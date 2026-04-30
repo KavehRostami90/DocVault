@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using DocVault.Application.Abstractions.Cqrs;
 using DocVault.Application.Abstractions.Qa;
@@ -9,8 +10,8 @@ namespace DocVault.Application.UseCases.Qa;
 
 /// <summary>
 /// Lightweight RAG orchestration:
-/// 1) retrieve top documents,
-/// 2) split to context chunks,
+/// 1) retrieve top document chunks via the search pipeline (which already runs pgvector),
+/// 2) use the pre-retrieved <see cref="SearchResultItem.MatchedChunkText"/> as context — no re-chunking,
 /// 3) call QA generator,
 /// 4) return answer + citations.
 /// </summary>
@@ -70,6 +71,39 @@ public sealed partial class AskQuestionHandler : IQueryHandler<AskQuestionQuery,
     return Result<AskQuestionResult>.Success(new AskQuestionResult(answer.Answer, citations, answer.AnsweredByModel));
   }
 
+  /// <summary>
+  /// Streaming variant: runs retrieval then yields LLM token deltas as an async sequence.
+  /// The caller is responsible for writing SSE framing.
+  /// </summary>
+  public async IAsyncEnumerable<string> HandleStreamAsync(
+    AskQuestionQuery query,
+    [EnumeratorCancellation] CancellationToken cancellationToken = default)
+  {
+    var search = await _search.HandleAsync(
+      new SearchDocumentsQuery(query.Question, 1, Math.Max(1, query.MaxDocuments), query.OwnerId, query.IsAdmin),
+      cancellationToken);
+
+    if (!search.IsSuccess || search.Value is null)
+    {
+      yield return "[ERROR] Failed to retrieve context documents.";
+      yield break;
+    }
+
+    var candidates = query.DocumentId.HasValue
+      ? search.Value.Page.Items.Where(i => i.Document.Id.Value == query.DocumentId.Value).ToList()
+      : search.Value.Page.Items.ToList();
+
+    var contexts = BuildContexts(candidates, query.Question, query.MaxContexts);
+    if (contexts.Count == 0)
+    {
+      yield return "I couldn't find relevant indexed text for that question.";
+      yield break;
+    }
+
+    await foreach (var token in _qa.AnswerStreamAsync(query.Question, contexts, cancellationToken))
+      yield return token;
+  }
+
   private static List<QaContextChunk> BuildContexts(IReadOnlyList<SearchResultItem> items, string question, int maxContexts)
   {
     var terms = Regex.Matches(question, @"\p{L}+|\p{N}+")
@@ -79,22 +113,20 @@ public sealed partial class AskQuestionHandler : IQueryHandler<AskQuestionQuery,
       .ToArray();
 
     var chunks = new List<QaContextChunk>();
+    var rank   = 0;
 
     foreach (var item in items)
     {
-      var doc = item.Document;
-      var text = doc.Text ?? string.Empty;
-      if (string.IsNullOrWhiteSpace(text))
+      // Use the chunk text already retrieved by the vector/FTS search — no re-chunking needed.
+      var chunkText = item.MatchedChunkText;
+      if (string.IsNullOrWhiteSpace(chunkText))
         continue;
 
-      foreach (var (chunkText, idx) in Chunk(text, 700, 120).Select((c, i) => (c, i)))
-      {
-        var lower = chunkText.ToLowerInvariant();
-        var lexicalHits = terms.Count(t => lower.Contains(t, StringComparison.Ordinal));
-        var lexicalScore = terms.Length == 0 ? 0d : (double)lexicalHits / terms.Length;
-        var score = Math.Round(item.Score * 0.7 + lexicalScore * 0.3, 4);
-        chunks.Add(new QaContextChunk(doc.Id.Value, doc.Title, chunkText.Trim(), score, idx));
-      }
+      var lower       = chunkText.ToLowerInvariant();
+      var lexicalHits = terms.Length == 0 ? 0 : terms.Count(t => lower.Contains(t, StringComparison.Ordinal));
+      var lexicalScore = terms.Length == 0 ? 0d : (double)lexicalHits / terms.Length;
+      var score       = Math.Round(item.Score * 0.7 + lexicalScore * 0.3, 4);
+      chunks.Add(new QaContextChunk(item.Document.Id.Value, item.Document.Title, chunkText.Trim(), score, rank++));
     }
 
     return chunks
@@ -103,31 +135,6 @@ public sealed partial class AskQuestionHandler : IQueryHandler<AskQuestionQuery,
       .Take(Math.Max(1, maxContexts))
       .ToList();
   }
-
-  private static IEnumerable<string> Chunk(string text, int window, int overlap)
-  {
-    if (string.IsNullOrWhiteSpace(text))
-      yield break;
-
-    var clean = Regex.Replace(text, "\\s+", " ").Trim();
-    if (clean.Length <= window)
-    {
-      yield return clean;
-      yield break;
-    }
-
-    var step = Math.Max(1, window - overlap);
-    for (var i = 0; i < clean.Length; i += step)
-    {
-      var len = Math.Min(window, clean.Length - i);
-      if (len <= 0) break;
-      yield return clean.Substring(i, len);
-      if (i + len >= clean.Length) break;
-    }
-  }
-
-  internal static string FallbackAnswer(QaContextChunk best)
-    => $"Possible answer from '{best.DocumentTitle}': {best.Text[..Math.Min(220, best.Text.Length)]}";
 
   [LoggerMessage(Level = LogLevel.Error,
     Message = "QA service threw an unexpected exception.")]

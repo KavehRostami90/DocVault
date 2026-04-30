@@ -10,6 +10,7 @@ using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Abstractions.Users;
 using DocVault.Application.Background.Queue;
+using Microsoft.Extensions.Options;
 using DocVault.Domain.Events;
 using DocVault.Infrastructure.Auth;
 using DocVault.Infrastructure.Email;
@@ -38,6 +39,9 @@ public static class DependencyInjection
   {
     var connectionString = configuration.GetConnectionString("Database");
 
+    var dbOptions = configuration.GetSection(DatabaseOptions.Section).Get<DatabaseOptions>() ?? new DatabaseOptions();
+    services.Configure<DatabaseOptions>(configuration.GetSection(DatabaseOptions.Section));
+
     if (string.IsNullOrWhiteSpace(connectionString))
     {
       services.AddDbContextFactory<DocVaultDbContext>(options =>
@@ -49,7 +53,11 @@ public static class DependencyInjection
     else
     {
       services.AddDbContextFactory<DocVaultDbContext>(options =>
-        options.UseNpgsql(connectionString, o => o.UseVector()));
+        options.UseNpgsql(connectionString, o =>
+        {
+          o.UseVector();
+          o.CommandTimeout(dbOptions.CommandTimeoutSeconds);
+        }));
       services.AddScoped(sp =>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
       services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
@@ -123,14 +131,32 @@ public static class DependencyInjection
 
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
     services.Configure<QaOptions>(configuration.GetSection(QaOptions.Section));
+
+    // Search result cache — short TTL to reduce repeated embedding + DB load for popular queries.
+    services.Configure<SearchCacheOptions>(configuration.GetSection(SearchCacheOptions.Section));
+    services.AddSingleton<ISearchResultCache, MemorySearchCache>();
+
+    // Embedding cache — shared across both OpenAI and Fake providers.
+    services.Configure<EmbeddingCacheOptions>(configuration.GetSection(EmbeddingCacheOptions.Section));
+    services.AddSingleton<IEmbeddingCache, MemoryEmbeddingCache>();
+
     if (openAiOptions.IsConfigured)
     {
       services.Configure<OpenAiOptions>(configuration.GetSection(OpenAiOptions.Section));
 
       var resilience = configuration.GetSection(ResilienceOptions.Section).Get<ResilienceOptions>() ?? new ResilienceOptions();
 
-      services.AddHttpClient<IEmbeddingProvider, OpenAiEmbeddingProvider>()
+      // Register the concrete HTTP client under its own type so the caching decorator
+      // can resolve it without creating a circular IEmbeddingProvider dependency.
+      services.AddHttpClient<OpenAiEmbeddingProvider>()
         .AddStandardResilienceHandler(o => ApplyResilience(o, resilience.Embedding));
+
+      services.AddSingleton<IEmbeddingProvider>(sp => new CachingEmbeddingProvider(
+        sp.GetRequiredService<OpenAiEmbeddingProvider>(),
+        sp.GetRequiredService<IEmbeddingCache>(),
+        openAiOptions.Model,
+        sp.GetRequiredService<IOptions<EmbeddingCacheOptions>>(),
+        sp.GetRequiredService<ILogger<CachingEmbeddingProvider>>()));
 
       services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>()
         .AddStandardResilienceHandler(o => ApplyResilience(o, resilience.Qa));
@@ -144,7 +170,13 @@ public static class DependencyInjection
           .LogWarning(
             "Embedding provider: FakeEmbeddingProvider — semantic search will produce meaningless results. " +
             "Configure OpenAI:ApiKey (or point OpenAI:BaseUrl at an Ollama instance) for real embeddings.");
-        return new FakeEmbeddingProvider();
+
+        return new CachingEmbeddingProvider(
+          new FakeEmbeddingProvider(),
+          sp.GetRequiredService<IEmbeddingCache>(),
+          "fake",
+          sp.GetRequiredService<IOptions<EmbeddingCacheOptions>>(),
+          sp.GetRequiredService<ILogger<CachingEmbeddingProvider>>());
       });
       services.AddSingleton<IQuestionAnsweringService, FallbackQuestionAnsweringService>();
     }

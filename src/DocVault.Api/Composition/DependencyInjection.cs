@@ -21,7 +21,8 @@ public static class DependencyInjection
   public static IServiceCollection AddDocVault(this IServiceCollection services, IConfiguration configuration)
   {
     services.AddInfrastructure(configuration);
-    services.AddApplication();
+    services.AddApplication(configuration);
+
 
     // CORS — allow credentials when specific origins are configured (required for httpOnly cookie cross-origin)
     var rawOrigins = configuration["Cors:AllowedOrigins"] ?? string.Empty;
@@ -47,12 +48,13 @@ public static class DependencyInjection
 
     services.AddRateLimiter(options =>
     {
+      var uploadLimit = configuration.GetValue<int>("RateLimit:DocumentUploadPerMinute", 20);
       options.AddPolicy(RateLimitPolicies.DocumentUpload, httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
           partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
           factory: _ => new FixedWindowRateLimiterOptions
           {
-            PermitLimit          = 20,
+            PermitLimit          = uploadLimit,
             Window               = TimeSpan.FromMinutes(1),
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
             QueueLimit           = 0,

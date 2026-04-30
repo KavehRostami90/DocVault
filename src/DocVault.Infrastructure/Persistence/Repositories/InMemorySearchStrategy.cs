@@ -35,11 +35,14 @@ internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
       query = query.Where(d => d.OwnerId == ownerId);
 
     // Load all matching docs to score them in-memory, then paginate.
-    // The extra LongCountAsync round-trip is unnecessary since we already have the full set.
+    // Text is required by DocumentScorer; Tags are required for the result DTO.
     var docs = await query.ToListAsync(ct);
 
     var items = docs
-      .Select(d => new SearchResultItem(d, DocumentScorer.Compute(d, terms)))
+      .Select(d => new SearchResultItem(
+          new DocumentSearchSummary(d.Id, d.Title, d.FileName, d.Tags.Select(t => t.Name).ToList()),
+          DocumentScorer.Compute(d, terms),
+          MatchedChunkText: d.Text))
       .OrderByDescending(i => i.Score)
       .ToList();
 

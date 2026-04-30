@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Background.Queue;
@@ -7,12 +8,16 @@ using DocVault.Domain.Imports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace DocVault.Application.Background;
 
 /// <summary>
 /// Long-running hosted service that drains the indexing queue.
 /// On startup it recovers any Pending or InProgress jobs left behind by a previous crash.
+/// Up to <see cref="IndexingWorkerOptions.MaxDegreeOfParallelism"/> documents are processed
+/// concurrently; this single knob controls back-pressure across the embedding API, the DB
+/// connection pool, CPU (OCR / PDF extraction), and file storage I/O.
 /// </summary>
 public sealed partial class IndexingWorker : BackgroundService
 {
@@ -20,6 +25,7 @@ public sealed partial class IndexingWorker : BackgroundService
   private readonly IIngestionPipeline _pipeline;
   private readonly IServiceScopeFactory _scopeFactory;
   private readonly IDomainEventDispatcher _eventDispatcher;
+  private readonly IndexingWorkerOptions _options;
   private readonly ILogger<IndexingWorker> _logger;
 
   public IndexingWorker(
@@ -27,12 +33,14 @@ public sealed partial class IndexingWorker : BackgroundService
     IIngestionPipeline pipeline,
     IServiceScopeFactory scopeFactory,
     IDomainEventDispatcher eventDispatcher,
+    IOptions<IndexingWorkerOptions> options,
     ILogger<IndexingWorker> logger)
   {
     _queue           = queue;
     _pipeline        = pipeline;
     _scopeFactory    = scopeFactory;
     _eventDispatcher = eventDispatcher;
+    _options         = options.Value;
     _logger          = logger;
   }
 
@@ -47,8 +55,25 @@ public sealed partial class IndexingWorker : BackgroundService
       return;
     }
 
+    LogWorkerStarted(_logger, _options.MaxDegreeOfParallelism);
+
+    // Semaphore acquired BEFORE dequeuing — this is the backpressure point.
+    // We never pull more items from the queue than we can immediately process,
+    // so queue ordering is preserved and resources (DB pool, embedding API) are capped.
+    using var semaphore  = new SemaphoreSlim(_options.MaxDegreeOfParallelism, _options.MaxDegreeOfParallelism);
+    var       activeTasks = new ConcurrentDictionary<Task, byte>();
+
     while (!stoppingToken.IsCancellationRequested)
     {
+      try
+      {
+        await semaphore.WaitAsync(stoppingToken);
+      }
+      catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+      {
+        break;
+      }
+
       IndexingWorkItem item;
       try
       {
@@ -56,10 +81,50 @@ public sealed partial class IndexingWorker : BackgroundService
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
       {
+        semaphore.Release(); // return the slot — no item was taken
         break;
       }
 
-      await ProcessItemAsync(item, stoppingToken);
+      var task = ProcessAndReleaseAsync(item, semaphore, stoppingToken);
+      activeTasks.TryAdd(task, 0);
+      // Clean up the tracking dict when the task finishes.
+      // ContinueWith with TaskScheduler.Default always posts to the thread pool,
+      // so TryAdd above is guaranteed to run before this continuation.
+      _ = task.ContinueWith(t => activeTasks.TryRemove(t, out _), TaskScheduler.Default);
+    }
+
+    // Graceful shutdown: wait for all in-flight jobs to finish.
+    if (activeTasks.Count > 0)
+    {
+      LogDraining(_logger, activeTasks.Count);
+      try { await Task.WhenAll(activeTasks.Keys); }
+      catch { /* individual failures are already logged inside ProcessItemAsync */ }
+    }
+  }
+
+  /// <summary>
+  /// Wraps <see cref="ProcessItemAsync"/> so the semaphore slot is always released,
+  /// and any exception that escapes the inner error-handling is logged rather than
+  /// crashing the worker loop.
+  /// </summary>
+  private async Task ProcessAndReleaseAsync(
+    IndexingWorkItem item,
+    SemaphoreSlim semaphore,
+    CancellationToken ct)
+  {
+    try
+    {
+      await ProcessItemAsync(item, ct);
+    }
+    catch (Exception ex) when (!ct.IsCancellationRequested)
+    {
+      // ProcessItemAsync has its own catch + MarkFailed path.
+      // This catches anything that escapes it (e.g. a failure inside MarkFailedAsync itself).
+      LogUnhandledWorkerError(_logger, item.JobId, ex);
+    }
+    finally
+    {
+      semaphore.Release();
     }
   }
 
@@ -188,10 +253,16 @@ public sealed partial class IndexingWorker : BackgroundService
     }
   }
 
-  [LoggerMessage(1, LogLevel.Information, "Recovered {Count} pending indexing job(s) from the database and re-enqueued them.")]
+  [LoggerMessage(0, LogLevel.Information,
+    "IndexingWorker started — MaxDegreeOfParallelism={MaxDegreeOfParallelism}.")]
+  private static partial void LogWorkerStarted(ILogger logger, int maxDegreeOfParallelism);
+
+  [LoggerMessage(1, LogLevel.Information,
+    "Recovered {Count} pending indexing job(s) from the database and re-enqueued them.")]
   private static partial void LogRecovered(ILogger logger, int count);
 
-  [LoggerMessage(2, LogLevel.Information, "Processing indexing job {JobId} — storage path: {StoragePath}")]
+  [LoggerMessage(2, LogLevel.Information,
+    "Processing indexing job {JobId} — storage path: {StoragePath}")]
   private static partial void LogProcessing(ILogger logger, Guid jobId, string storagePath);
 
   [LoggerMessage(3, LogLevel.Information, "Indexing job {JobId} completed successfully.")]
@@ -203,6 +274,15 @@ public sealed partial class IndexingWorker : BackgroundService
   [LoggerMessage(5, LogLevel.Warning, "Indexing job {JobId} not found in the database; skipping.")]
   private static partial void LogJobNotFound(ILogger logger, Guid jobId);
 
-  [LoggerMessage(6, LogLevel.Error, "Failed to update status for indexing job {JobId} after a processing error.")]
+  [LoggerMessage(6, LogLevel.Error,
+    "Failed to update status for indexing job {JobId} after a processing error.")]
   private static partial void LogStatusUpdateFailed(ILogger logger, Guid jobId, Exception ex);
+
+  [LoggerMessage(7, LogLevel.Information,
+    "IndexingWorker stopping — draining {Count} in-flight job(s).")]
+  private static partial void LogDraining(ILogger logger, int count);
+
+  [LoggerMessage(8, LogLevel.Error,
+    "Unhandled error in IndexingWorker for job {JobId} — error escaped the inner handler.")]
+  private static partial void LogUnhandledWorkerError(ILogger logger, Guid jobId, Exception ex);
 }

@@ -201,7 +201,9 @@ Permanently delete a document and its stored binary.
 ### `POST /api/v1/search/documents`
 Search documents by meaning (semantic) or keywords (full-text fallback).
 
-When Ollama is available, the query is embedded as a vector and results are ranked by cosine similarity using pgvector. When Ollama is unreachable, the search falls back to PostgreSQL full-text search (`tsvector`).
+When Ollama is available, the query is embedded as a vector and results are ranked by cosine similarity using pgvector (HNSW index). When Ollama is unreachable, the search falls back to PostgreSQL full-text search (`tsvector`).
+
+**Performance notes:** results never load the full `Document.Text` column — only `Id`, `Title`, `FileName`, `Tags`, and the matched chunk text are fetched. Repeated identical queries (same normalised query, page, user) are served from a 2-minute in-memory cache before any embedding call or database query.
 
 **Body:**
 ```json
@@ -272,7 +274,60 @@ Possible `status` values: `Pending`, `InProgress`, `Completed`, `Failed`.
 
 ---
 
-## Tags
+## Question Answering
+
+### `POST /api/v1/qa/ask`
+Run the RAG pipeline and return a complete answer.
+
+**Body:**
+```json
+{ "question": "What is the amortisation schedule?", "documentId": "<uuid or null>" }
+```
+
+| Field | Rules |
+|---|---|
+| `question` | Required; 1–1024 characters |
+| `documentId` | Optional; scopes the search to a single document |
+
+**Response `200 OK`:**
+```json
+{
+  "answer": "According to the document…",
+  "answeredByModel": true,
+  "citations": [
+    { "documentId": "<uuid>", "title": "Q4 Report", "excerpt": "…passage…", "score": 0.91 }
+  ]
+}
+```
+
+If no indexed content is found, `answeredByModel` is `false` and the answer is an extractive fallback message.
+
+---
+
+### `POST /api/v1/qa/ask/stream`
+Streaming variant — returns the answer incrementally over Server-Sent Events.
+
+Same request body as `/qa/ask`.
+
+**Response** — `text/event-stream`:
+```
+data: "According"
+
+data: " to"
+
+data: " the"
+
+data: " document…"
+
+data: [DONE]
+
+```
+
+Each `data:` line carries a JSON-encoded token string. The stream ends with the sentinel `data: [DONE]`. The `X-Accel-Buffering: no` header is set to disable nginx proxy buffering.
+
+Connect with the `EventSource` API or a `fetch`+`ReadableStream` client. The frontend uses the latter so it can attach the Bearer token header (which `EventSource` does not support).
+
+---
 
 ### `GET /api/v1/tags`
 List all tag names in use across the corpus (scoped to the current user's documents; admin sees all).
