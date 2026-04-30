@@ -9,6 +9,7 @@ using DocVault.Domain.Documents.ValueObjects;
 using DocVault.Domain.Imports;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Xunit;
 
@@ -48,7 +49,8 @@ public sealed class IndexingWorkerTests
         Mock<IImportJobRepository> JobRepo,
         Mock<IDocumentRepository> DocRepo)
     BuildWorker(Action<Mock<IImportJobRepository>>? configureJobRepo = null,
-                Action<Mock<IDocumentRepository>>? configureDocRepo  = null)
+                Action<Mock<IDocumentRepository>>? configureDocRepo  = null,
+                int maxDegreeOfParallelism = 4)
     {
         var queue    = new Mock<IWorkQueue<IndexingWorkItem>>();
         var pipeline = new Mock<IIngestionPipeline>();
@@ -93,6 +95,7 @@ public sealed class IndexingWorkerTests
             pipeline.Object,
             scopeFactory.Object,
             new Mock<IDomainEventDispatcher>().Object,
+            Options.Create(new IndexingWorkerOptions { MaxDegreeOfParallelism = maxDegreeOfParallelism }),
             NullLogger<DocVault.Application.Background.IndexingWorker>.Instance);
 
         return (worker, queue, pipeline, jobRepo, docRepo);
@@ -347,6 +350,81 @@ public sealed class IndexingWorkerTests
         await worker.StopAsync(CancellationToken.None);
 
         queue.Verify(q => q.Enqueue(It.IsAny<IndexingWorkItem>()), Times.Never);
+    }
+
+    // -------------------------------------------------------------------------
+    // Concurrency — two items processed simultaneously
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ExecuteAsync_ProcessesTwoItemsConcurrently_WhenMaxDegreeIsTwo()
+    {
+        var docId1 = DocumentId.New(); var doc1 = MakeDocument(docId1); var job1 = MakeJob(docId1);
+        var docId2 = DocumentId.New(); var doc2 = MakeDocument(docId2); var job2 = MakeJob(docId2);
+        var item1 = new IndexingWorkItem(job1.Id, job1.StoragePath, job1.ContentType);
+        var item2 = new IndexingWorkItem(job2.Id, job2.StoragePath, job2.ContentType);
+
+        // bothInFlight completes only when both pipeline calls have started;
+        // each call then awaits it — ensuring they overlap in time.
+        var inFlightCount = 0;
+        var bothInFlight  = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var (worker, queue, pipeline, _, docRepo) = BuildWorker(
+            maxDegreeOfParallelism: 2,
+            configureJobRepo: jobRepo =>
+            {
+                jobRepo.Setup(r => r.GetAsync(job1.Id, It.IsAny<CancellationToken>())).ReturnsAsync(job1);
+                jobRepo.Setup(r => r.GetAsync(job2.Id, It.IsAny<CancellationToken>())).ReturnsAsync(job2);
+            },
+            configureDocRepo: docRepo =>
+            {
+                docRepo.Setup(r => r.GetAsync(docId1, It.IsAny<CancellationToken>())).ReturnsAsync(doc1);
+                docRepo.Setup(r => r.GetAsync(docId2, It.IsAny<CancellationToken>())).ReturnsAsync(doc2);
+                docRepo.Setup(r => r.UpdateAsync(It.IsAny<Document>(), It.IsAny<CancellationToken>()))
+                       .Returns(Task.CompletedTask);
+            });
+
+        pipeline.Setup(p => p.RunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Returns<string, string, CancellationToken>(async (_, _, ct) =>
+                {
+                    // Signal when the second pipeline call is in flight, then
+                    // hold both calls until that moment — proving they overlap.
+                    if (Interlocked.Increment(ref inFlightCount) == 2)
+                        bothInFlight.TrySetResult();
+
+                    await bothInFlight.Task.WaitAsync(ct);
+                    return new IngestionResult(string.Empty, []);
+                });
+
+        var callCount = 0;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        queue.Setup(q => q.DequeueAsync(It.IsAny<CancellationToken>()))
+             .Returns<CancellationToken>(async ct =>
+             {
+                 return Interlocked.Increment(ref callCount) switch
+                 {
+                     1 => item1,
+                     2 => item2,
+                     _ => await BlockForeverAsync(ct),
+                 };
+             });
+
+        await worker.StartAsync(CancellationToken.None);
+
+        // Wait until both pipeline calls are genuinely in flight at the same time.
+        await bothInFlight.Task.WaitAsync(cts.Token);
+
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Equal(2, inFlightCount);
+        Assert.Equal(ImportStatus.Completed, job1.Status);
+        Assert.Equal(ImportStatus.Completed, job2.Status);
+    }
+
+    private static async Task<IndexingWorkItem> BlockForeverAsync(CancellationToken ct)
+    {
+        await Task.Delay(Timeout.Infinite, ct);
+        return default!;
     }
 }
 

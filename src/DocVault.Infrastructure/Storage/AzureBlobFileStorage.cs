@@ -31,8 +31,14 @@ public sealed class AzureBlobFileStorage : IFileStorage
     if (!await blob.ExistsAsync(cancellationToken))
       throw new FileNotFoundException($"Blob '{path}' was not found.", path);
 
+    // DownloadStreamingAsync returns a non-seekable network stream.
+    // Buffer into a MemoryStream so the ingestion pipeline can seek freely.
     var response = await blob.DownloadStreamingAsync(cancellationToken: cancellationToken);
-    return response.Value.Content;
+    var ms = new MemoryStream();
+    await using (response.Value.Content)
+      await response.Value.Content.CopyToAsync(ms, cancellationToken);
+    ms.Position = 0;
+    return ms;
   }
 
   public async Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default)

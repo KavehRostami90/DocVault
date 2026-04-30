@@ -10,12 +10,16 @@ public sealed class EmbeddingStage
   {
     _provider = provider;
   }
-  /// <summary>
-  /// Generates an embedding vector for the given text using the configured
-  /// </summary>
-  /// <param name="text"></param>
-  /// <param name="cancellationToken"></param>
-  /// <returns></returns>
+
   public Task<float[]> GenerateAsync(string text, CancellationToken cancellationToken = default)
     => _provider.EmbedAsync(text, cancellationToken);
+
+  /// <summary>
+  /// Generates embeddings for all chunks in a single batch request.
+  /// Reduces HTTP round-trips from O(n) to O(1) for providers that support batching.
+  /// </summary>
+  public Task<IReadOnlyList<float[]>> GenerateBatchAsync(
+    IReadOnlyList<string> texts,
+    CancellationToken cancellationToken = default)
+    => _provider.EmbedBatchAsync(texts, cancellationToken);
 }

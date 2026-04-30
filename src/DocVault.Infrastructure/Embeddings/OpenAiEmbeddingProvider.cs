@@ -36,13 +36,21 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
 
   public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
   {
+    var result = await EmbedBatchAsync([text], cancellationToken);
+    return result[0];
+  }
+
+  public async Task<IReadOnlyList<float[]>> EmbedBatchAsync(
+    IReadOnlyList<string> texts,
+    CancellationToken cancellationToken = default)
+  {
     // The `dimensions` parameter is only supported by certain OpenAI models (text-embedding-3-*).
     // Local providers such as Ollama ignore or reject it, so we only include it when explicitly set.
     object body = _options.Dimensions > 0
-      ? new { model = _options.Model, input = text, dimensions = _options.Dimensions }
-      : new { model = _options.Model, input = text };
+      ? new { model = _options.Model, input = texts, dimensions = _options.Dimensions }
+      : new { model = _options.Model, input = texts };
 
-    LogRequestSent(_logger, _options.Model, text.Length);
+    LogBatchRequestSent(_logger, _options.Model, texts.Count);
 
     var response = await _http.PostAsJsonAsync("embeddings", body, cancellationToken);
 
@@ -50,20 +58,26 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
     {
       var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
       LogRequestFailed(_logger, (int)response.StatusCode, $"{_options.BaseUrl} ({_options.Model})", errorBody);
-      response.EnsureSuccessStatusCode(); // throws HttpRequestException with the status code
+      response.EnsureSuccessStatusCode();
     }
 
     var result = await response.Content.ReadFromJsonAsync<EmbeddingResponse>(cancellationToken)
       ?? throw new InvalidOperationException("Embedding API returned an empty response body.");
 
-    if (result.Data is not [{ Embedding: { } vector }, ..])
+    if (result.Data is not { Count: > 0 })
     {
       LogEmptyEmbedding(_logger, _options.Model);
       throw new InvalidOperationException("Embedding API returned no embedding data.");
     }
 
-    LogEmbedded(_logger, text.Length, _options.Model, vector.Length);
-    return vector;
+    // The API may return items out of order — sort by index before returning.
+    var vectors = result.Data
+      .OrderBy(d => d.Index)
+      .Select(d => d.Embedding)
+      .ToArray();
+
+    LogBatchEmbedded(_logger, texts.Count, _options.Model, vectors[0].Length);
+    return vectors;
   }
 
   [LoggerMessage(Level = LogLevel.Information,
@@ -71,13 +85,13 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
   private static partial void LogProviderReady(ILogger logger, string baseUrl, string model, string dimensions);
 
   [LoggerMessage(Level = LogLevel.Debug,
-    Message = "Sending embed request — model={Model}, inputLength={CharCount} chars.")]
-  private static partial void LogRequestSent(ILogger logger, string model, int charCount);
+    Message = "Sending batch embed request — model={Model}, count={Count} texts.")]
+  private static partial void LogBatchRequestSent(ILogger logger, string model, int count);
 
   [LoggerMessage(Level = LogLevel.Debug,
-    Message = "Embedded {CharCount} chars using model {Model} — returned {Dimensions} dimensions.")]
-  private static partial void LogEmbedded(ILogger logger, int charCount, string model, int dimensions);
-
+    Message = "Batch embedded {Count} texts using model {Model} — returned {Dimensions} dimensions each.")]
+  private static partial void LogBatchEmbedded(ILogger logger, int count, string model, int dimensions);
+  
   [LoggerMessage(EventId = 1, Level = LogLevel.Error,
     Message = "Embedding API request failed — HTTP {StatusCode}, endpoint={Endpoint}. Response body: {Body}")]
   private static partial void LogRequestFailed(ILogger logger, int statusCode, string endpoint, string body);
@@ -92,5 +106,6 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
     [property: JsonPropertyName("data")] List<EmbeddingData> Data);
 
   private sealed record EmbeddingData(
-    [property: JsonPropertyName("embedding")] float[] Embedding);
+    [property: JsonPropertyName("embedding")] float[] Embedding,
+    [property: JsonPropertyName("index")]     int     Index);
 }

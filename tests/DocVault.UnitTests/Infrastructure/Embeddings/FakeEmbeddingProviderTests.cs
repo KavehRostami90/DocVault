@@ -117,5 +117,49 @@ public sealed class FakeEmbeddingProviderTests
         var vector = await _provider.EmbedAsync("text", cts.Token);
         Assert.Equal(768, vector.Length);
     }
+
+    // -------------------------------------------------------------------------
+    // Batch — EmbedBatchAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task EmbedBatchAsync_ReturnsOneVectorPerInput()
+    {
+        var texts = new[] { "alpha", "beta", "gamma" };
+        var results = await _provider.EmbedBatchAsync(texts);
+
+        Assert.Equal(texts.Length, results.Count);
+        Assert.All(results, v => Assert.Equal(768, v.Length));
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsync_PreservesInputOrder()
+    {
+        var texts = new[] { "finance quarterly report", "kubernetes container orchestration", "machine learning" };
+
+        var batchResults  = await _provider.EmbedBatchAsync(texts);
+        var singleResults = await Task.WhenAll(texts.Select(t => _provider.EmbedAsync(t)));
+
+        for (var i = 0; i < texts.Length; i++)
+            Assert.Equal(singleResults[i], batchResults[i]);
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsync_EmptyList_ReturnsEmptyList()
+    {
+        var results = await _provider.EmbedBatchAsync([]);
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task EmbedBatchAsync_SingleText_MatchesEmbedAsync()
+    {
+        const string text = "single input batch";
+
+        var single = await _provider.EmbedAsync(text);
+        var batch  = await _provider.EmbedBatchAsync([text]);
+
+        Assert.Equal(single, batch[0]);
+    }
 }
 
