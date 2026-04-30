@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Upload, FileText, ChevronLeft, ChevronRight, X, AlertCircle } from 'lucide-react'
+import { Search, Upload, FileText, X, AlertCircle } from 'lucide-react'
 import { listDocuments } from '../api/documents'
 import { listTags } from '../api/tags'
 import StatusBadge from '../components/StatusBadge'
 import UploadModal from '../components/UploadModal'
+import Pagination from '../components/Pagination'
 import type { DocumentListItem, PageResponse } from '../types'
 
 const STATUSES = ['Pending', 'Imported', 'Indexed', 'Failed']
@@ -151,13 +152,12 @@ export default function DocumentsPage() {
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-8">
-          <p className="text-slate-500 text-sm">Page {page} of {totalPages}</p>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"><ChevronRight className="w-4 h-4" /></button>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          className="mt-8"
+        />
       )}
 
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={ids => { setShowUpload(false); if (ids.length === 1) { navigate(`/documents/${ids[0]}`) } else { load() } }} />}

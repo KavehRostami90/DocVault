@@ -3,6 +3,7 @@ import { Download, Eye, RefreshCw, Trash2 } from 'lucide-react'
 import { adminApi, type AdminDocument } from '../../api/admin'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import StatusBadge from '../../components/StatusBadge'
+import Pagination from '../../components/Pagination'
 import type { DocumentStatus } from '../../types'
 import type { AdminDocumentFilter } from './adminFilters'
 
@@ -359,26 +360,11 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-400">
-          <span>{totalCount} documents</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Previous
-            </button>
-            <span className="px-3 py-1">Page {page} / {totalPages}</span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
       )}
 
       {pendingDelete && (

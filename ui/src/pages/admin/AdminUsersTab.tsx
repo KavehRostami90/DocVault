@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Trash2, KeyRound, X } from 'lucide-react'
 import { adminApi, type AdminUser } from '../../api/admin'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import Pagination from '../../components/Pagination'
 import type { AdminUserFilter } from './adminFilters'
 
 const ALL_ROLES = ['Admin', 'User']
+const PAGE_SIZE = 15
 
 interface Props {
   filter?: AdminUserFilter
@@ -15,6 +17,7 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
   const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null)
   const [toastMsg, setToastMsg] = useState('')
   const [pwTarget, setPwTarget] = useState<AdminUser | null>(null)
@@ -102,6 +105,11 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
     }
   }, [filter, users])
 
+  // Reset to page 1 whenever filter changes
+  useEffect(() => { setPage(1) }, [filter])
+
+  const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE)
+  const pagedUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const filterLabel = userFilterLabel(filter)
 
   return (
@@ -121,7 +129,7 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-white font-medium">{filterLabel}</h2>
-          <p className="text-sm text-slate-500">{filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-slate-500">{filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}{totalPages > 1 ? ` · page ${page} of ${totalPages}` : ''}</p>
         </div>
         {filter !== 'all' && onClearFilter && (
           <button
@@ -150,7 +158,7 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
               <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
             ) : filteredUsers.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No users found for this category.</td></tr>
-            ) : filteredUsers.map(u => (
+            ) : pagedUsers.map(u => (
               <React.Fragment key={u.id}>
               <tr className="border-b border-slate-800/50 hover:bg-slate-800/30">
                 <td className="px-4 py-3">
@@ -244,6 +252,12 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
 
       {pendingDelete && (
         <ConfirmDialog
