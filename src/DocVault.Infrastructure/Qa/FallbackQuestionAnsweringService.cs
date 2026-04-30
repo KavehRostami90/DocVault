@@ -12,8 +12,17 @@ public sealed class FallbackQuestionAnsweringService : IQuestionAnsweringService
     if (contexts.Count == 0)
       return Task.FromResult(new QaAnswerResult("I couldn't find relevant indexed text for that question.", AnsweredByModel: false));
 
-    var best = contexts[0];
+    var best    = contexts[0];
     var excerpt = best.Text[..Math.Min(220, best.Text.Length)];
     return Task.FromResult(new QaAnswerResult($"Possible answer from '{best.DocumentTitle}': {excerpt}", AnsweredByModel: false));
+  }
+
+  public async IAsyncEnumerable<string> AnswerStreamAsync(
+    string question,
+    IReadOnlyList<QaContextChunk> contexts,
+    [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+  {
+    var result = await AnswerAsync(question, contexts, cancellationToken);
+    yield return result.Answer;
   }
 }

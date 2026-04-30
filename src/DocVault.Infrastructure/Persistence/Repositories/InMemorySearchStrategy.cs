@@ -41,7 +41,8 @@ internal sealed class InMemorySearchStrategy : IDocumentSearchStrategy
     var items = docs
       .Select(d => new SearchResultItem(
           new DocumentSearchSummary(d.Id, d.Title, d.FileName, d.Tags.Select(t => t.Name).ToList()),
-          DocumentScorer.Compute(d, terms)))
+          DocumentScorer.Compute(d, terms),
+          MatchedChunkText: d.Text))
       .OrderByDescending(i => i.Score)
       .ToList();
 

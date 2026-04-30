@@ -17,6 +17,13 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
 {
   private const double DistanceThreshold = 0.7;
+  private const int    CandidateLimit    = 50;
+  /// <summary>
+  /// Over-fetch from the HNSW index to ensure we still find enough owner-matching docs
+  /// after ownership filtering in vec_best.
+  /// </summary>
+  private const int    AnnPrefetch       = CandidateLimit * 5;
+  private const int    CommandTimeoutSec = 30;
 
   public bool CanHandle(DocVaultDbContext db, float[]? queryVector, string[] terms) =>
     db.Database.IsRelational() && queryVector is not null && terms.Length == 0;
@@ -30,31 +37,33 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
     float[]? queryVector,
     CancellationToken ct)
   {
-    var ownerFilter = ownerId.HasValue ? "AND d.\"OwnerId\" = @ownerId" : string.Empty;
+    var ownerFilter = ownerId.HasValue ? """AND d."OwnerId" = @ownerId""" : string.Empty;
 
-    // CTE: pick the single closest chunk per document, then join to Documents for owner filtering.
+    // vec_candidates: ORDER BY + LIMIT triggers the HNSW index — no JOINs here.
+    // vec_best: DISTINCT ON picks the closest chunk per document; ownership filter applied after ANN.
     var sql = $"""
-        WITH chunk_distances AS (
+        WITH vec_candidates AS (
             SELECT
                 c."DocumentId",
-                c."Text"                                              AS chunk_text,
-                (c."Embedding" <=> @embedding)                        AS distance,
-                ROW_NUMBER() OVER (
-                    PARTITION BY c."DocumentId"
-                    ORDER BY     c."Embedding" <=> @embedding
-                )                                                     AS rn
+                c."Text"                              AS chunk_text,
+                (c."Embedding" <=> @embedding)        AS distance
             FROM "DocumentChunks" c
             WHERE c."Embedding" IS NOT NULL
+            ORDER BY c."Embedding" <=> @embedding
+            LIMIT {AnnPrefetch}
         ),
-        best_per_doc AS (
-            SELECT "DocumentId", chunk_text, distance
-            FROM   chunk_distances
-            WHERE  rn = 1 AND distance < @threshold
+        vec_best AS (
+            SELECT DISTINCT ON (vc."DocumentId")
+                vc."DocumentId", vc.chunk_text, vc.distance
+            FROM   vec_candidates vc
+            JOIN   "Documents" d ON d."Id" = vc."DocumentId"
+            WHERE  vc.distance < @threshold
+            {ownerFilter}
+            ORDER  BY vc."DocumentId", vc.distance
         )
         SELECT b."DocumentId", b.chunk_text, b.distance, d."Title", d."FileName"
-        FROM   best_per_doc b
+        FROM   vec_best b
         JOIN   "Documents" d ON d."Id" = b."DocumentId"
-        WHERE  1=1 {ownerFilter}
         ORDER  BY b.distance
         LIMIT  @size OFFSET @offset
         """;
@@ -66,7 +75,7 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
 
       var raw = new List<(DocumentId Id, string? ChunkText, double Distance, string Title, string FileName)>();
 
-      using (var cmd = new NpgsqlCommand(sql, conn))
+      using (var cmd = new NpgsqlCommand(sql, conn) { CommandTimeout = CommandTimeoutSec })
       {
         cmd.Parameters.AddWithValue("embedding", new Vector(queryVector!));
         cmd.Parameters.AddWithValue("threshold", DistanceThreshold);
@@ -115,7 +124,7 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
       FROM   "DocumentTag" dt
       JOIN   "Tags" t ON t."Id" = dt."TagsId"
       WHERE  dt."DocumentId" = ANY(@ids)
-      """, conn);
+      """, conn) { CommandTimeout = CommandTimeoutSec };
     cmd.Parameters.AddWithValue("ids", docIds);
 
     using var reader = await cmd.ExecuteReaderAsync(ct);

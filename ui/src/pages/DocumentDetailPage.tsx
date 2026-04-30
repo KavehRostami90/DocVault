@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, Eye, FileText, Tag, Trash2, Plus, X, Save, AlertTriangle, Copy, Check, Sparkles } from 'lucide-react'
 import { getDocument, getDocumentDownloadBlob, getDocumentPreviewBlob, updateTags, deleteDocument, getExtractedText, getExtractedTextBlob } from '../api/documents'
-import { askQuestion } from '../api/qa'
+import { askQuestionStream } from '../api/qa'
 import StatusBadge from '../components/StatusBadge'
 import { useDocumentStatusStream } from '../hooks/useDocumentStatusStream'
-import type { DocumentDetail, QaResponse } from '../types'
+import type { DocumentDetail } from '../types'
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -34,9 +34,10 @@ export default function DocumentDetailPage() {
   const [textCopied, setTextCopied] = useState(false)
   const [downloadingText, setDownloadingText] = useState(false)
   const [question, setQuestion] = useState('')
-  const [qa, setQa] = useState<QaResponse | null>(null)
+  const [streamingAnswer, setStreamingAnswer] = useState<string | null>(null)
   const [qaLoading, setQaLoading] = useState(false)
   const [qaError, setQaError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -167,19 +168,25 @@ export default function DocumentDetailPage() {
 
   const handleAskDocument = async () => {
     if (!id || !question.trim()) return
+    // Cancel any in-flight stream from a previous question.
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
     setQaLoading(true)
     setQaError(null)
+    setStreamingAnswer('')
     try {
-      const response = await askQuestion({
-        question: question.trim(),
-        documentId: id,
-        maxDocuments: 12,
-        maxContexts: 8
-      })
-      setQa(response)
+      await askQuestionStream(
+        { question: question.trim(), documentId: id, maxDocuments: 12, maxContexts: 8 },
+        token => setStreamingAnswer(prev => (prev ?? '') + token),
+        ctrl.signal,
+      )
     } catch (e) {
-      setQa(null)
-      setQaError(e instanceof Error ? e.message : 'Failed to answer question')
+      if ((e as Error).name !== 'AbortError') {
+        setStreamingAnswer(null)
+        setQaError(e instanceof Error ? e.message : 'Failed to answer question')
+      }
     } finally {
       setQaLoading(false)
     }
@@ -335,19 +342,14 @@ export default function DocumentDetailPage() {
           </button>
         </div>
         {qaError && <p className="text-red-400 text-xs mt-3">{qaError}</p>}
-        {qa && (
+        {streamingAnswer !== null && (
           <div className="mt-4 bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-            <p className="text-slate-100 text-sm leading-relaxed">{qa.answer}</p>
-            {qa.citations.length > 0 && (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Citations</p>
-                {qa.citations.slice(0, 2).map((c, i) => (
-                  <p key={`${c.documentId}-${i}`} className="text-xs text-slate-400">
-                    {c.excerpt}
-                  </p>
-                ))}
-              </div>
-            )}
+            <p className="text-slate-100 text-sm leading-relaxed whitespace-pre-wrap">
+              {streamingAnswer}
+              {qaLoading && (
+                <span className="inline-block w-0.5 h-4 bg-indigo-400 ml-0.5 align-text-bottom animate-pulse" />
+              )}
+            </p>
           </div>
         )}
       </div>

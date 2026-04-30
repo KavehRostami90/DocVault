@@ -1,5 +1,8 @@
+using DocVault.Application.Abstractions.Embeddings;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Background.Queue;
+using DocVault.Application.Common.Paging;
+using DocVault.Application.UseCases.Search;
 using DocVault.Infrastructure.Persistence;
 using DocVault.Infrastructure.Queue;
 using DocVault.Infrastructure.Storage;
@@ -66,6 +69,11 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
 
       // Restore the lightweight in-process queue; channel-backed, no Postgres needed.
       services.AddSingleton<IWorkQueue<IndexingWorkItem>>(_ => new ChannelWorkQueue<IndexingWorkItem>());
+
+      // Replace the search result cache with a no-op so cached results from one test class
+      // don't bleed into the next after the database is wiped and re-seeded.
+      services.RemoveAll<ISearchResultCache>();
+      services.AddSingleton<ISearchResultCache>(new NoOpSearchResultCache());
 
       // Replace the JWT auth setup with a no-op test handler so that
       // RequireAuthorization() endpoints work without a real token.
@@ -179,5 +187,17 @@ public sealed class DocVaultFactory : WebApplicationFactory<Program>
       // The temp directory will be cleaned up by OS eventually
     }
   }
-}
 
+  /// <summary>
+  /// A cache implementation that never stores or returns anything.
+  /// Prevents stale results from one test class's seeded data bleeding into the next.
+  /// </summary>
+  private sealed class NoOpSearchResultCache : ISearchResultCache
+  {
+    public Task<Page<SearchResultItem>?> GetAsync(string key, CancellationToken ct) =>
+      Task.FromResult<Page<SearchResultItem>?>(null);
+
+    public Task SetAsync(string key, Page<SearchResultItem> page, TimeSpan expiry, CancellationToken ct) =>
+      Task.CompletedTask;
+  }
+}

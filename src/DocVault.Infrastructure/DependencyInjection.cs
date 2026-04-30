@@ -132,6 +132,10 @@ public static class DependencyInjection
     var openAiOptions = configuration.GetSection(OpenAiOptions.Section).Get<OpenAiOptions>() ?? new OpenAiOptions();
     services.Configure<QaOptions>(configuration.GetSection(QaOptions.Section));
 
+    // Search result cache — short TTL to reduce repeated embedding + DB load for popular queries.
+    services.Configure<SearchCacheOptions>(configuration.GetSection(SearchCacheOptions.Section));
+    services.AddSingleton<ISearchResultCache, MemorySearchCache>();
+
     // Embedding cache — shared across both OpenAI and Fake providers.
     services.Configure<EmbeddingCacheOptions>(configuration.GetSection(EmbeddingCacheOptions.Section));
     services.AddSingleton<IEmbeddingCache, MemoryEmbeddingCache>();

@@ -102,3 +102,47 @@ export async function del(path: string): Promise<void> {
 export async function upload<T>(path: string, form: FormData): Promise<T> {
   return request<T>(path, { method: 'POST', body: form })
 }
+
+/**
+ * POST a JSON body and stream Server-Sent Events back.
+ * Calls `onToken` for every token delta; resolves when `[DONE]` is received.
+ * Pass an AbortSignal to cancel mid-stream.
+ */
+export async function postStream(
+  path: string,
+  body: unknown,
+  onToken: (token: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const r = await send(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+    signal,
+  })
+
+  const reader  = r.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer    = ''
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    // Lines are separated by \n; a blank line separates SSE events.
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? '' // retain any trailing incomplete line
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const data = line.slice('data: '.length).trim()
+      if (data === '[DONE]') return
+      try {
+        const token: string = JSON.parse(data)
+        onToken(token)
+      } catch { /* ignore malformed chunks */ }
+    }
+  }
+}

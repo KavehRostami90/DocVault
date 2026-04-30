@@ -12,9 +12,9 @@ namespace DocVault.Infrastructure.Persistence.Repositories;
 /// Hybrid search strategy that fuses chunk-level vector similarity and full-text search rankings
 /// using Reciprocal Rank Fusion (RRF, K=60).
 /// <para>
-/// Top-50 vector candidates (from <c>DocumentChunks</c>, best chunk per document) and top-50
-/// FTS candidates are merged: <c>rrf = 1/(60+vec_rank) + 1/(60+fts_rank)</c>. Documents that
-/// appear in only one list still receive a partial score.
+/// Top-50 vector candidates are found via the HNSW index (ORDER BY … LIMIT) then the best
+/// chunk per document is selected with DISTINCT ON. Top-50 FTS candidates use ts_rank. Both
+/// lists are merged: <c>rrf = 1/(60+vec_rank) + 1/(60+fts_rank)</c>.
 /// </para>
 /// Activated when a query embedding is available, the database is PostgreSQL, and at least one
 /// text term is present — i.e. it takes priority over <see cref="PgvectorSearchStrategy"/>.
@@ -24,6 +24,13 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
   private const double DistanceThreshold = 0.8; // slightly relaxed — FTS compensates for weak vector hits
   private const int    CandidateLimit    = 50;
   private const int    RrfK              = 60;
+  /// <summary>
+  /// How many ANN rows to pre-fetch before ownership filtering and DISTINCT ON.
+  /// Over-fetching ensures we still get <see cref="CandidateLimit"/> owner-matching docs
+  /// even when some of the top-K vectors belong to other users.
+  /// </summary>
+  private const int    AnnPrefetch       = CandidateLimit * 5;
+  private const int    CommandTimeoutSec = 30;
 
   public bool CanHandle(DocVaultDbContext db, float[]? queryVector, string[] terms) =>
     db.Database.IsRelational() && queryVector is not null && terms.Length > 0;
@@ -37,11 +44,11 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
     float[]? queryVector,
     CancellationToken ct)
   {
-    var ownerFilter = ownerId.HasValue ? "AND d.\"OwnerId\" = @ownerId" : string.Empty;
+    // Applied inside both vec and fts CTEs so ownership is filtered before any large intermediate set.
+    var ownerFilter = ownerId.HasValue ? """AND d."OwnerId" = @ownerId""" : string.Empty;
 
     var tsQuery = BuildTsQuery(terms);
 
-    // When there are no usable FTS terms, fall back to pure semantic ranking.
     var ftsBlock = string.IsNullOrEmpty(tsQuery)
       ? """
         fts_candidates AS (SELECT NULL::uuid AS "DocumentId" WHERE FALSE),
@@ -53,6 +60,7 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
                    ts_rank(d."SearchVector", to_tsquery('english', @tsQuery)) AS score
             FROM   "Documents" d
             WHERE  d."SearchVector" @@ to_tsquery('english', @tsQuery)
+            {ownerFilter}
             ORDER  BY score DESC
             LIMIT  {CandidateLimit}
         ),
@@ -62,44 +70,49 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
         ),
         """;
 
+    // vec_candidates: HNSW-indexed ANN — ORDER BY + LIMIT is the access pattern pgvector needs.
+    // No joins here to avoid defeating the index plan; ownership is applied in vec_best.
+    // vec_best: DISTINCT ON picks the closest chunk per document, then post-filters by threshold and owner.
     var sql = $"""
-        WITH chunk_distances AS (
+        WITH vec_candidates AS (
             SELECT
                 c."DocumentId",
-                c."Text"                                              AS chunk_text,
-                (c."Embedding" <=> @embedding)                        AS distance,
-                ROW_NUMBER() OVER (
-                    PARTITION BY c."DocumentId"
-                    ORDER BY     c."Embedding" <=> @embedding
-                )                                                     AS rn
+                c."Text"                              AS chunk_text,
+                (c."Embedding" <=> @embedding)        AS distance
             FROM "DocumentChunks" c
             WHERE c."Embedding" IS NOT NULL
+            ORDER BY c."Embedding" <=> @embedding
+            LIMIT {AnnPrefetch}
         ),
         vec_best AS (
-            SELECT "DocumentId", chunk_text, distance
-            FROM   chunk_distances
-            WHERE  rn = 1 AND distance < @threshold
-            ORDER  BY distance
-            LIMIT  {CandidateLimit}
+            SELECT DISTINCT ON (vc."DocumentId")
+                vc."DocumentId", vc.chunk_text, vc.distance
+            FROM   vec_candidates vc
+            JOIN   "Documents" d ON d."Id" = vc."DocumentId"
+            WHERE  vc.distance < @threshold
+            {ownerFilter}
+            ORDER  BY vc."DocumentId", vc.distance
         ),
         vec_ranked AS (
-            SELECT "DocumentId", chunk_text, ROW_NUMBER() OVER (ORDER BY distance) AS rank
+            SELECT "DocumentId", chunk_text,
+                   ROW_NUMBER() OVER (ORDER BY distance) AS rank
             FROM   vec_best
+            ORDER  BY distance
+            LIMIT  {CandidateLimit}
         ),
         {ftsBlock}
         rrf AS (
             SELECT
-                COALESCE(v."DocumentId", f."DocumentId")              AS doc_id,
+                COALESCE(v."DocumentId", f."DocumentId")               AS doc_id,
                 v.chunk_text,
                 COALESCE(1.0 / ({RrfK}.0 + v.rank::float8), 0)
-                + COALESCE(1.0 / ({RrfK}.0 + f.rank::float8), 0)     AS rrf_score
+                + COALESCE(1.0 / ({RrfK}.0 + f.rank::float8), 0)      AS rrf_score
             FROM       vec_ranked v
             FULL OUTER JOIN fts_ranked f ON v."DocumentId" = f."DocumentId"
         )
         SELECT r.doc_id, r.chunk_text, r.rrf_score, d."Title", d."FileName"
         FROM   rrf r
         JOIN   "Documents" d ON d."Id" = r.doc_id
-        WHERE  1=1 {ownerFilter}
         ORDER  BY r.rrf_score DESC
         LIMIT  @size OFFSET @offset
         """;
@@ -111,7 +124,7 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
 
       var raw = new List<(DocumentId Id, string? ChunkText, double Score, string Title, string FileName)>();
 
-      using (var cmd = new NpgsqlCommand(sql, conn))
+      using (var cmd = new NpgsqlCommand(sql, conn) { CommandTimeout = CommandTimeoutSec })
       {
         cmd.Parameters.AddWithValue("embedding", new Vector(queryVector!));
         cmd.Parameters.AddWithValue("threshold", DistanceThreshold);
@@ -162,7 +175,7 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
       FROM   "DocumentTag" dt
       JOIN   "Tags" t ON t."Id" = dt."TagsId"
       WHERE  dt."DocumentId" = ANY(@ids)
-      """, conn);
+      """, conn) { CommandTimeout = CommandTimeoutSec };
     cmd.Parameters.AddWithValue("ids", docIds);
 
     using var reader = await cmd.ExecuteReaderAsync(ct);
