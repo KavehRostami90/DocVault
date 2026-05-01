@@ -58,8 +58,8 @@ public sealed class IndexingWorkerTests
         var jobRepo  = new Mock<IImportJobRepository>();
         var docRepo  = new Mock<IDocumentRepository>();
 
-        // Default: no pending jobs to recover
-        jobRepo.Setup(r => r.GetPendingAsync(It.IsAny<CancellationToken>()))
+        // Default: no in-progress jobs to recover
+        jobRepo.Setup(r => r.GetInProgressAsync(It.IsAny<CancellationToken>()))
                .ReturnsAsync(Array.Empty<ImportJob>());
 
         configureJobRepo?.Invoke(jobRepo);
@@ -304,7 +304,7 @@ public sealed class IndexingWorkerTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task Startup_PendingJobsExist_ReEnqueuesAll()
+    public async Task Startup_InProgressJobsExist_ReEnqueuesAll()
     {
         var docId1 = DocumentId.New();
         var docId2 = DocumentId.New();
@@ -312,7 +312,7 @@ public sealed class IndexingWorkerTests
         var job2   = MakeJob(docId2, Guid.NewGuid());
 
         var (worker, queue, _, jobRepo, _) = BuildWorker(
-            jobRepo => jobRepo.Setup(r => r.GetPendingAsync(It.IsAny<CancellationToken>()))
+            jobRepo => jobRepo.Setup(r => r.GetInProgressAsync(It.IsAny<CancellationToken>()))
                               .ReturnsAsync(new[] { job1, job2 }));
 
         // Block immediately so we only test the recovery path without processing

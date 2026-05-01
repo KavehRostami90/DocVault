@@ -10,13 +10,13 @@ public sealed class ReindexDocumentHandler : ICommandHandler<ReindexDocumentComm
 {
   private readonly IDocumentRepository _documents;
   private readonly IImportJobRepository _imports;
-  private readonly IWorkQueue<IndexingWorkItem> _queue;
+  private readonly IIndexingQueueRepository _queue;
   private readonly IUnitOfWork _unitOfWork;
 
   public ReindexDocumentHandler(
     IDocumentRepository documents,
     IImportJobRepository imports,
-    IWorkQueue<IndexingWorkItem> queue,
+    IIndexingQueueRepository queue,
     IUnitOfWork unitOfWork)
   {
     _documents  = documents;
@@ -34,15 +34,15 @@ public sealed class ReindexDocumentHandler : ICommandHandler<ReindexDocumentComm
     var storagePath = $"{doc.Id.Value}.bin";
     doc.PrepareForReindex();
 
-    var job = new ImportJob(Guid.NewGuid(), doc.Id, doc.FileName, storagePath, doc.ContentType);
+    var job      = new ImportJob(Guid.NewGuid(), doc.Id, doc.FileName, storagePath, doc.ContentType);
+    var workItem = new IndexingWorkItem(job.Id, storagePath, doc.ContentType);
 
     await _unitOfWork.ExecuteInTransactionAsync(async ct =>
     {
       await _documents.UpdateAsync(doc, ct);
       await _imports.AddAsync(job, ct);
+      await _queue.AddAsync(workItem, ct);
     }, cancellationToken);
-
-    _queue.Enqueue(new IndexingWorkItem(job.Id, storagePath, doc.ContentType));
 
     return Result.Success();
   }

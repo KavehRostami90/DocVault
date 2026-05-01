@@ -15,11 +15,13 @@ public interface IImportJobRepository
   Task UpdateAsync(ImportJob job, CancellationToken cancellationToken = default);
 
   /// <summary>
-  /// Returns all jobs whose status is <see cref="ImportStatus.Pending"/> or
-  /// <see cref="ImportStatus.InProgress"/> so they can be re-queued after a
-  /// process restart.
+  /// Returns all jobs whose status is <see cref="ImportStatus.InProgress"/>.
+  /// These are jobs that were dequeued and actively being processed when the
+  /// process crashed — their queue row is already gone, so they need re-queuing
+  /// on startup. Pending jobs are excluded because they still have a durable
+  /// queue row and will be picked up automatically.
   /// </summary>
-  Task<IReadOnlyList<ImportJob>> GetPendingAsync(CancellationToken cancellationToken = default);
+  Task<IReadOnlyList<ImportJob>> GetInProgressAsync(CancellationToken cancellationToken = default);
 
   /// <summary>
   /// Returns the most recently created <see cref="ImportJob"/> for the given document,

@@ -160,12 +160,15 @@ public sealed partial class IndexingWorker : BackgroundService
     using var scope = _scopeFactory.CreateScope();
     var repo = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
 
-    var pending = await repo.GetPendingAsync(ct);
-    foreach (var job in pending)
+    // Only InProgress jobs need re-queuing: their queue row was already deleted when
+    // the worker dequeued them, but the process died before they completed.
+    // Pending jobs still have a durable queue row and will be picked up automatically.
+    var inProgress = await repo.GetInProgressAsync(ct);
+    foreach (var job in inProgress)
       _queue.Enqueue(new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType));
 
-    if (pending.Count > 0)
-      LogRecovered(_logger, pending.Count);
+    if (inProgress.Count > 0)
+      LogRecovered(_logger, inProgress.Count);
   }
 
   private async Task ProcessItemAsync(IndexingWorkItem item, CancellationToken ct)
