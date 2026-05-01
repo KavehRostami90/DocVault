@@ -1,4 +1,4 @@
-export type DocumentStatus = 'Pending' | 'Imported' | 'Indexed' | 'Failed'
+export type DocumentStatus = 'Imported' | 'Indexed' | 'Failed'
 
 export interface DocumentListItem {
   id: string
@@ -50,7 +50,7 @@ export interface QaResponse {
 export interface ImportStatus {
   id: string
   fileName: string
-  status: string
+  status: 'Pending' | 'InProgress' | 'Completed' | 'Failed'
   startedAt: string
   completedAt: string | null
   error: string | null

@@ -8,7 +8,7 @@ import UploadModal from '../components/UploadModal'
 import Pagination from '../components/Pagination'
 import type { DocumentListItem, PageResponse } from '../types'
 
-const STATUSES = ['Pending', 'Imported', 'Indexed', 'Failed']
+const STATUSES = ['Imported', 'Indexed', 'Failed']
 const PAGE_SIZE = 12
 
 export default function DocumentsPage() {
@@ -42,7 +42,7 @@ export default function DocumentsPage() {
   // Does NOT set loading state so cards don't flash to skeletons every 5 s.
   useEffect(() => {
     if (!data) return
-    const hasPending = data.items.some(d => d.status === 'Pending' || d.status === 'Imported')
+    const hasPending = data.items.some(d => d.status === 'Imported')
     if (!hasPending) return
 
     const id = setInterval(async () => {

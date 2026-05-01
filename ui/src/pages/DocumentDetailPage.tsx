@@ -44,7 +44,7 @@ export default function DocumentDetailPage() {
     getDocument(id).then(d => {
       setDoc(d)
       setTags(d.tags.slice())
-      setStreamActive(d.status === 'Pending' || d.status === 'Imported')
+      setStreamActive(d.status === 'Imported')
     }).finally(() => setLoading(false))
   }, [id])
 
@@ -292,7 +292,7 @@ export default function DocumentDetailPage() {
 
           {doc.status !== 'Indexed' ? (
             <p className="text-slate-500 text-sm py-4 text-center">
-              {doc.status === 'Pending' || doc.status === 'Imported'
+              {doc.status === 'Imported'
                 ? 'Text extraction is in progress…'
                 : 'Text extraction is not available for this document.'}
             </p>
