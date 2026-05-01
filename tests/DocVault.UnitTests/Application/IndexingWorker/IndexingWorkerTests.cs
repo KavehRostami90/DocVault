@@ -50,7 +50,8 @@ public sealed class IndexingWorkerTests
         Mock<IDocumentRepository> DocRepo)
     BuildWorker(Action<Mock<IImportJobRepository>>? configureJobRepo = null,
                 Action<Mock<IDocumentRepository>>? configureDocRepo  = null,
-                int maxDegreeOfParallelism = 4)
+                int maxDegreeOfParallelism = 4,
+                int drainTimeoutSeconds    = 5)
     {
         var queue    = new Mock<IWorkQueue<IndexingWorkItem>>();
         var pipeline = new Mock<IIngestionPipeline>();
@@ -90,12 +91,16 @@ public sealed class IndexingWorkerTests
             return scope.Object;
         });
 
-        var worker = new DocVault.Application.Background.IndexingWorker(
+    var worker = new DocVault.Application.Background.IndexingWorker(
             queue.Object,
             pipeline.Object,
             scopeFactory.Object,
             new Mock<IDomainEventDispatcher>().Object,
-            Options.Create(new IndexingWorkerOptions { MaxDegreeOfParallelism = maxDegreeOfParallelism }),
+            Options.Create(new IndexingWorkerOptions
+            {
+              MaxDegreeOfParallelism = maxDegreeOfParallelism,
+              DrainTimeoutSeconds    = drainTimeoutSeconds,
+            }),
             NullLogger<DocVault.Application.Background.IndexingWorker>.Instance);
 
         return (worker, queue, pipeline, jobRepo, docRepo);
@@ -425,6 +430,92 @@ public sealed class IndexingWorkerTests
     {
         await Task.Delay(Timeout.Infinite, ct);
         return default!;
+    }
+
+    // -------------------------------------------------------------------------
+    // Drain — in-flight job completes within the drain window
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task StopAsync_InFlightJobCompletesBeforeDrainTimeout_JobIsCompleted()
+    {
+        var documentId = DocumentId.New();
+        var document   = MakeDocument(documentId);
+        var job        = MakeJob(documentId);
+        var workItem   = new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType);
+
+        // Use a very short drain timeout (2 s) to keep the test fast, but the pipeline
+        // completes quickly so the job should still finish successfully.
+        var (worker, queue, pipeline, jobRepo, docRepo) = BuildWorker(
+            drainTimeoutSeconds: 2,
+            configureJobRepo: r => r.Setup(x => x.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                                    .ReturnsAsync(job),
+            configureDocRepo: r => r.Setup(x => x.GetAsync(documentId, It.IsAny<CancellationToken>()))
+                                    .ReturnsAsync(document));
+
+        pipeline.Setup(p => p.RunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new IngestionResult(string.Empty, []));
+
+        // Signal when we know the item has started processing, then stop the worker.
+        var pipelineCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        pipeline.Setup(p => p.RunAsync(workItem.StoragePath, workItem.ContentType, It.IsAny<CancellationToken>()))
+                .Returns<string, string, CancellationToken>(async (_, _, ct) =>
+                {
+                    pipelineCalled.TrySetResult();
+                    await Task.Delay(100, ct); // brief work — well within drain window
+                    return new IngestionResult(string.Empty, []);
+                });
+
+        docRepo.Setup(r => r.UpdateAsync(It.IsAny<Document>(), It.IsAny<CancellationToken>()))
+               .Returns(Task.CompletedTask);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        SetupQueueSingleItem(queue, workItem, cts);
+
+        await worker.StartAsync(CancellationToken.None);
+        await pipelineCalled.Task.WaitAsync(cts.Token);
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Equal(ImportStatus.Completed, job.Status);
+    }
+
+    // -------------------------------------------------------------------------
+    // Drain — job exceeds the drain timeout → stays InProgress for recovery
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task StopAsync_InFlightJobExceedsDrainTimeout_JobRemainsInProgress()
+    {
+        var documentId = DocumentId.New();
+        var document   = MakeDocument(documentId);
+        var job        = MakeJob(documentId);
+        var workItem   = new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType);
+
+        // Drain timeout of 1 s; pipeline blocks until its token is cancelled (simulating
+        // a slow embedding API that never responds within the drain window).
+        var (worker, queue, pipeline, jobRepo, _) = BuildWorker(
+            drainTimeoutSeconds: 1,
+            configureJobRepo: r => r.Setup(x => x.GetAsync(job.Id, It.IsAny<CancellationToken>()))
+                                    .ReturnsAsync(job));
+
+        var pipelineCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        pipeline.Setup(p => p.RunAsync(workItem.StoragePath, workItem.ContentType, It.IsAny<CancellationToken>()))
+                .Returns<string, string, CancellationToken>(async (_, _, ct) =>
+                {
+                    pipelineCalled.TrySetResult();
+                    await Task.Delay(Timeout.Infinite, ct); // blocks until jobCts is cancelled
+                    return new IngestionResult(string.Empty, []);
+                });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        SetupQueueSingleItem(queue, workItem, cts);
+
+        await worker.StartAsync(CancellationToken.None);
+        await pipelineCalled.Task.WaitAsync(cts.Token); // wait until processing starts
+        await worker.StopAsync(CancellationToken.None); // triggers drain + timeout
+
+        // Job was started (InProgress) but not completed; remains InProgress for recovery.
+        Assert.Equal(ImportStatus.InProgress, job.Status);
     }
 }
 

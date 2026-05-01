@@ -39,6 +39,20 @@ public sealed class OpenAiOptions
   public int Dimensions { get; init; } = 0;
 
   /// <summary>
+  /// Maximum number of characters sent per embedding input item.
+  /// Texts longer than this value are truncated before calling the embedding API.
+  /// Set to 0 to disable truncation.
+  /// </summary>
+  public int MaxInputCharacters { get; init; } = 6000;
+
+  /// <summary>
+  /// Maximum number of inputs sent in a single embedding API request.
+  /// Large input lists are split into multiple requests to avoid endpoint payload/context limits.
+  /// Set to 1 or higher.
+  /// </summary>
+  public int MaxBatchSize { get; init; } = 8;
+
+  /// <summary>
   /// Gets a value indicating whether an OpenAI-compatible endpoint is configured.
   /// Supports either:
   /// <list type="bullet">

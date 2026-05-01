@@ -57,10 +57,17 @@ public sealed partial class IndexingWorker : BackgroundService
 
     LogWorkerStarted(_logger, _options.MaxDegreeOfParallelism);
 
+    // Separate CTS for in-flight work. stoppingToken controls when we stop
+    // accepting new items; jobCts controls the work itself. This lets the drain
+    // phase give jobs time to finish (embedding retries, DB writes) before
+    // forcefully cancelling them, avoiding jobs being left InProgress on every
+    // clean shutdown.
+    using var jobCts = new CancellationTokenSource();
+
     // Semaphore acquired BEFORE dequeuing — this is the backpressure point.
     // We never pull more items from the queue than we can immediately process,
     // so queue ordering is preserved and resources (DB pool, embedding API) are capped.
-    using var semaphore  = new SemaphoreSlim(_options.MaxDegreeOfParallelism, _options.MaxDegreeOfParallelism);
+    using var semaphore   = new SemaphoreSlim(_options.MaxDegreeOfParallelism, _options.MaxDegreeOfParallelism);
     var       activeTasks = new ConcurrentDictionary<Task, byte>();
 
     while (!stoppingToken.IsCancellationRequested)
@@ -85,7 +92,8 @@ public sealed partial class IndexingWorker : BackgroundService
         break;
       }
 
-      var task = ProcessAndReleaseAsync(item, semaphore, stoppingToken);
+      // Pass jobCts.Token (not stoppingToken) so jobs can complete during drain.
+      var task = ProcessAndReleaseAsync(item, semaphore, jobCts.Token);
       activeTasks.TryAdd(task, 0);
       // Clean up the tracking dict when the task finishes.
       // ContinueWith with TaskScheduler.Default always posts to the thread pool,
@@ -93,11 +101,30 @@ public sealed partial class IndexingWorker : BackgroundService
       _ = task.ContinueWith(t => activeTasks.TryRemove(t, out _), TaskScheduler.Default);
     }
 
-    // Graceful shutdown: wait for all in-flight jobs to finish.
-    if (activeTasks.Count > 0)
+    if (activeTasks.Count == 0)
+      return;
+
+    // Graceful drain: give in-flight jobs DrainTimeoutSeconds to complete.
+    // If they don't finish in time, cancel them — they'll stay InProgress and
+    // will be recovered on next startup via RecoverPendingJobsAsync.
+    LogDraining(_logger, activeTasks.Count);
+
+    var drainTimeout = TimeSpan.FromSeconds(_options.DrainTimeoutSeconds);
+    var drainTask    = Task.WhenAll(activeTasks.Keys);
+    var timedOut     = await Task.WhenAny(drainTask, Task.Delay(drainTimeout)) != drainTask;
+
+    if (timedOut)
     {
-      LogDraining(_logger, activeTasks.Count);
-      try { await Task.WhenAll(activeTasks.Keys); }
+      var remaining = activeTasks.Keys.Count(t => !t.IsCompleted);
+      LogDrainTimedOut(_logger, remaining, _options.DrainTimeoutSeconds);
+      await jobCts.CancelAsync();
+      // Give cancellation a short window to propagate before we exit.
+      try { await drainTask.WaitAsync(TimeSpan.FromSeconds(5)); }
+      catch { /* individual failures and cancellations are logged inside ProcessItemAsync */ }
+    }
+    else
+    {
+      try { await drainTask; }
       catch { /* individual failures are already logged inside ProcessItemAsync */ }
     }
   }
@@ -285,4 +312,8 @@ public sealed partial class IndexingWorker : BackgroundService
   [LoggerMessage(8, LogLevel.Error,
     "Unhandled error in IndexingWorker for job {JobId} — error escaped the inner handler.")]
   private static partial void LogUnhandledWorkerError(ILogger logger, Guid jobId, Exception ex);
+
+  [LoggerMessage(9, LogLevel.Warning,
+    "IndexingWorker drain timed out after {DrainTimeoutSeconds}s — {Count} job(s) did not finish and will be recovered on next startup.")]
+  private static partial void LogDrainTimedOut(ILogger logger, int count, int drainTimeoutSeconds);
 }
