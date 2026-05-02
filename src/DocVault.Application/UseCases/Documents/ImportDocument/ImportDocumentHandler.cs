@@ -15,14 +15,14 @@ public sealed class ImportDocumentHandler : ICommandHandler<ImportDocumentComman
   private readonly IDocumentRepository _documents;
   private readonly IImportJobRepository _imports;
   private readonly IFileStorage _storage;
-  private readonly IWorkQueue<IndexingWorkItem> _queue;
+  private readonly IIndexingQueueRepository _queue;
   private readonly IUnitOfWork _unitOfWork;
 
   public ImportDocumentHandler(
     IDocumentRepository documents,
     IImportJobRepository imports,
     IFileStorage storage,
-    IWorkQueue<IndexingWorkItem> queue,
+    IIndexingQueueRepository queue,
     IUnitOfWork unitOfWork)
   {
     _documents  = documents;
@@ -50,16 +50,15 @@ public sealed class ImportDocumentHandler : ICommandHandler<ImportDocumentComman
     document.ReplaceTags(tags);
     document.MarkImported();
 
-    var job = new ImportJob(Guid.NewGuid(), documentId, command.FileName, storagePath, command.ContentType);
+    var job     = new ImportJob(Guid.NewGuid(), documentId, command.FileName, storagePath, command.ContentType);
+    var workItem = new IndexingWorkItem(job.Id, storagePath, command.ContentType);
 
-    // Persist document and import job atomically — never leave a document without a matching job.
     await _unitOfWork.ExecuteInTransactionAsync(async ct =>
     {
       await _documents.AddAsync(document, ct);
       await _imports.AddAsync(job, ct);
+      await _queue.AddAsync(workItem, ct);
     }, cancellationToken);
-
-    _queue.Enqueue(new IndexingWorkItem(job.Id, storagePath, command.ContentType));
 
     return Result<DocumentId>.Success(documentId);
   }

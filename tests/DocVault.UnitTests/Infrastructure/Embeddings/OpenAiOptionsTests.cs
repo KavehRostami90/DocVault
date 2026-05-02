@@ -25,4 +25,12 @@ public sealed class OpenAiOptionsTests
     var options = new OpenAiOptions { ApiKey = "", BaseUrl = "https://api.openai.com/v1" };
     Assert.False(options.IsConfigured);
   }
+
+  [Fact]
+  public void Defaults_ProvideSafeEmbeddingRequestLimits()
+  {
+    var options = new OpenAiOptions();
+    Assert.Equal(6000, options.MaxInputCharacters);
+    Assert.Equal(8, options.MaxBatchSize);
+  }
 }

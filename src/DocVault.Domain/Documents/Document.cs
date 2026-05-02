@@ -9,8 +9,7 @@ public class Document : AggregateRoot<DocumentId>
 {
   private readonly List<Tag> _tags = new();
 
-  // Invalid patterns that must not appear in a stored file name.
-  private static readonly string[] INVALID_FILE_NAME_PATTERNS = ["..", "/", "\\"];
+  private static readonly string[] s_invalidFileNamePatterns = ["..", "/", "\\"];
 
   public string Title { get; private set; }
   public string FileName { get; private set; }
@@ -20,9 +19,9 @@ public class Document : AggregateRoot<DocumentId>
   public string Text { get; private set; }
   public float[]? Embedding { get; private set; }
   public DocumentStatus Status { get; private set; }
-  /// <summary>Set when the document enters the <see cref="DocumentStatus.Failed"/> state.</summary>
+  /// <summary>Populated when indexing fails. Null otherwise.</summary>
   public string? IndexingError { get; private set; }
-  /// <summary>Identity user id of the owner. Null for documents created before auth was introduced.</summary>
+  /// <summary>Owner's identity user id. Null for documents imported before auth was added.</summary>
   public Guid? OwnerId { get; private set; }
   public IReadOnlyCollection<Tag> Tags => _tags.AsReadOnly();
 
@@ -136,7 +135,7 @@ public class Document : AggregateRoot<DocumentId>
     if (string.IsNullOrWhiteSpace(fileName))
       throw new DomainException(DomainErrorCodes.FileNameRequired, "File name cannot be empty or whitespace");
 
-    if (INVALID_FILE_NAME_PATTERNS.Any(fileName.Contains))
+    if (s_invalidFileNamePatterns.Any(fileName.Contains))
       throw new DomainException(DomainErrorCodes.FileNameInvalid, "File name contains invalid characters");
 
     FileName = fileName.Trim();

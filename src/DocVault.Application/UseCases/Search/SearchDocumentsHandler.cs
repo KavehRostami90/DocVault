@@ -6,13 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace DocVault.Application.UseCases.Search;
 
-/// <summary>
-/// Handles document search. Embeds the query with the configured provider for semantic
-/// (pgvector cosine similarity) search. If embedding fails (e.g. Ollama not running),
-/// the search falls back to PostgreSQL full-text search automatically.
-/// Results are cached via <see cref="ISearchResultCache"/> to reduce
-/// repeated embedding calls and database load for popular queries.
-/// </summary>
 public sealed partial class SearchDocumentsHandler : IQueryHandler<SearchDocumentsQuery, Result<SearchPageResult>>
 {
   private readonly IDocumentRepository _documents;
@@ -54,10 +47,7 @@ public sealed partial class SearchDocumentsHandler : IQueryHandler<SearchDocumen
 
     var page = await _documents.SearchAsync(query.Query, query.Page, query.Size, ownerId, queryVector, cancellationToken);
 
-    var hasTerms = query.Query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > 0;
-    var mode = queryVector is null ? SearchMode.Keyword
-             : hasTerms           ? SearchMode.Hybrid
-             :                      SearchMode.Semantic;
+    var mode = queryVector is null ? SearchMode.Keyword : SearchMode.Hybrid;
 
     var result = new SearchPageResult(page, mode);
     await _cache.SetAsync(cacheKey, result, cancellationToken);

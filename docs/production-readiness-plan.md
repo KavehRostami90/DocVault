@@ -21,8 +21,8 @@ This document tracks what is fully implemented, what still uses a development de
 | **Embedding provider** | `OpenAiEmbeddingProvider` — OpenAI-compatible API (works with Ollama `nomic-embed-text` locally) |
 | **Dev embedding stub** | `FakeEmbeddingProvider` — FNV-1a feature hashing, 128-dim; activated when `OpenAI:ApiKey` is empty |
 | **File storage** | `LocalFileStorage` (dev default) and `AzureBlobFileStorage` (production); swap via `Storage:Provider` config |
-| **Work queue** | `ChannelWorkQueue<T>` (in-memory, dev default) and `PostgresWorkQueue` (SKIP LOCKED, production); swap via DI registration |
-| **Background indexing** | `IndexingWorker` (`BackgroundService`); crash recovery on startup re-enqueues `Pending`/`InProgress` jobs |
+| **Work queue** | `ChannelWorkQueue<T>` (in-memory, dev default) and `PostgresWorkQueue` (SKIP LOCKED, production); dequeue path configured via DI; enqueue is always transactional via `IIndexingQueueRepository` |
+| **Background indexing** | `IndexingWorker` (`BackgroundService`); queue entry written atomically with `ImportJob` in the same DB transaction (`IIndexingQueueRepository`); crash recovery on startup re-enqueues `InProgress` jobs only |
 | **Health checks** | `/health/live` (liveness) and `/health/ready` (DB + storage readiness checks) |
 | **Rate limiting** | Fixed-window rate limiter on upload endpoints (10 requests / 1 minute) |
 | **Input validation** | FluentValidation on all requests; all limits sourced from `ValidationConstants` |
@@ -47,7 +47,7 @@ This document tracks what is fully implemented, what still uses a development de
 | Component | Dev default | Production replacement |
 |---|---|---|
 | **File storage** | `LocalFileStorage` — saves `{id}.bin` to `/app/storage` in the container | Set `Storage:Provider = AzureBlob` and configure `Storage:AzureBlob:ConnectionString` + `ContainerName` |
-| **Work queue** | `ChannelWorkQueue<T>` — in-memory; items lost on restart | Switch to `PostgresWorkQueue` in `DependencyInjection.cs`; already implemented |
+| **Work queue** | `ChannelWorkQueue<T>` — in-memory; items lost on restart | Switch to `PostgresWorkQueue` in `DependencyInjection.cs`; already implemented. Enqueue is already transactional — no additional changes required for that path. |
 | **Embedding dimensions** | `OpenAI:Dimensions = 0` in `appsettings.json` and `docker-compose.yml` — activates `FakeEmbeddingProvider` (128-dim) | Set `OpenAI:Dimensions = 768` for `nomic-embed-text`; adjust if using a different model |
 | **Azure Bicep tier** | App Service Free (F1) in `infra/main.bicep` | Upgrade to at least B2 / P1v3 for production workloads |
 | **JWT signing key** | Dev secret in `appsettings.Development.json` | Set `Auth:JwtSigningKey` via Azure App Settings / env var; must be 32+ chars |
@@ -86,19 +86,18 @@ This document tracks what is fully implemented, what still uses a development de
 
 ## Switching to PostgresWorkQueue
 
-```csharp
-// src/DocVault.Infrastructure/DependencyInjection.cs
-// Change:
-services.AddSingleton<IWorkQueue<IndexingWorkItem>, ChannelWorkQueue<IndexingWorkItem>>();
-// To:
-services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
-```
+`DependencyInjection.cs` already chooses the right queue based on whether a database connection string is present:
 
-The `PostgresWorkQueue` table (`IndexingQueueEntries`) already exists in the EF schema.
+- **No connection string** (in-memory / tests): `ChannelWorkQueue<T>` as `IWorkQueue` + `ChannelIndexingQueueRepository` as `IIndexingQueueRepository`
+- **Connection string present** (production): `PostgresWorkQueue` as `IWorkQueue` + `EfIndexingQueueRepository` as `IIndexingQueueRepository`
 
----
+No code change is required — the correct implementations are wired automatically.
 
-## Switching to Azure Blob Storage
+> **Important:** `IIndexingQueueRepository.AddAsync` is called **inside** the same `ExecuteInTransactionAsync` block as `Document` and `ImportJob`. This means the queue row is always committed atomically — a process crash between upload and enqueue is impossible.
+
+The `PostgresWorkQueue` table (`IndexingQueueEntries`) already exists in the EF schema. It uses `SELECT … FOR UPDATE SKIP LOCKED` to safely dequeue work items across multiple API instances without double-processing.
+
+
 
 Set these values in Azure App Settings or environment variables (never in source code):
 
@@ -156,7 +155,7 @@ The `AzureBlobFileStorage` implementation is already in `src/DocVault.Infrastruc
 Reduce costs by using the Free F1 App Service tier for low-traffic environments and storing files in Cool or Archive blob tiers.
 
 | File storage | `LocalFileStorage` — writes `{id}.bin` to `/app/storage` | Azure Blob Storage, AWS S3, or MinIO |
-| Work queue | `ChannelWorkQueue<T>` — in-memory, lost on restart | `PostgresWorkQueue` (already implemented) — enables multi-instance deployments |
+| Work queue | `ChannelWorkQueue<T>` — in-memory, lost on restart | `PostgresWorkQueue` (already implemented) — enables multi-instance deployments; enqueue is already transactional via `IIndexingQueueRepository` |
 | Search index | `IndexStage` — virtual no-op base class | Subclass with PostgreSQL `tsvector`/`tsquery`, Azure AI Search, or Elasticsearch |
 
 ---

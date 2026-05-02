@@ -44,6 +44,40 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
     IReadOnlyList<string> texts,
     CancellationToken cancellationToken = default)
   {
+    if (texts.Count == 0)
+      return [];
+
+    var maxBatchSize = Math.Max(1, _options.MaxBatchSize);
+    var prepared = texts
+      .Select(text => PrepareText(text, _options.MaxInputCharacters))
+      .ToList();
+
+    var allVectors = new List<float[]>(prepared.Count);
+    for (var offset = 0; offset < prepared.Count; offset += maxBatchSize)
+    {
+      var batchSize = Math.Min(maxBatchSize, prepared.Count - offset);
+      var batch = prepared.GetRange(offset, batchSize);
+      var vectors = await SendBatchAsync(batch, cancellationToken);
+      allVectors.AddRange(vectors);
+    }    
+
+    return allVectors;
+  }
+
+  private static string PrepareText(string text, int maxInputCharacters)
+  {
+    var normalized = string.IsNullOrWhiteSpace(text) ? " " : text;
+
+    if (maxInputCharacters <= 0 || normalized.Length <= maxInputCharacters)
+      return normalized;
+
+    return normalized[..maxInputCharacters];
+  }
+
+  private async Task<IReadOnlyList<float[]>> SendBatchAsync(
+    IReadOnlyList<string> texts,
+    CancellationToken cancellationToken)
+  {
     // The `dimensions` parameter is only supported by certain OpenAI models (text-embedding-3-*).
     // Local providers such as Ollama ignore or reject it, so we only include it when explicitly set.
     object body = _options.Dimensions > 0
@@ -70,7 +104,6 @@ public sealed partial class OpenAiEmbeddingProvider : IEmbeddingProvider
       throw new InvalidOperationException("Embedding API returned no embedding data.");
     }
 
-    // The API may return items out of order — sort by index before returning.
     var vectors = result.Data
       .OrderBy(d => d.Index)
       .Select(d => d.Embedding)

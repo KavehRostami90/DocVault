@@ -27,7 +27,7 @@ async function openStatusStream(
     })
   } catch (e) {
     if ((e as Error).name === 'AbortError') return
-    return // network error — silently give up
+    return
   }
 
   if (response.status === 401 && !retried) {
@@ -36,15 +36,15 @@ async function openStatusStream(
       sessionStorage.setItem('dv_access_token', result.accessToken)
       return openStatusStream(documentId, onEvent, signal, true)
     } catch {
-      return // auth failed — silently give up
+      return
     }
   }
 
   if (!response.ok || !response.body) return
 
-  const reader = response.body.getReader()
+  const reader  = response.body.getReader()
   const decoder = new TextDecoder()
-  let buffer = ''
+  let buffer    = ''
 
   try {
     while (true) {
@@ -52,7 +52,6 @@ async function openStatusStream(
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
-      // SSE messages are separated by double newlines.
       const blocks = buffer.split('\n\n')
       buffer = blocks.pop() ?? ''
 
@@ -62,36 +61,24 @@ async function openStatusStream(
             try {
               const evt: DocumentStatusSseEvent = JSON.parse(line.slice(6))
               onEvent(evt.status, evt.error)
-            } catch {
-              // ignore parse errors
-            }
+            } catch { }
           }
         }
       }
     }
   } catch (e) {
-    if ((e as Error).name !== 'AbortError') {
-      // silently ignore stream read errors
-    }
+    if ((e as Error).name === 'AbortError') return
   } finally {
     reader.cancel().catch(() => {})
   }
 }
 
-/**
- * Opens a fetch-based SSE connection to `/documents/{id}/status-stream` and
- * calls `onStatusChange` whenever the document transitions to a new status.
- * The stream is automatically closed once a terminal status (Indexed / Failed)
- * is received, or when `active` becomes false / the component unmounts.
- *
- * Uses fetch instead of EventSource so the Authorization header can be sent.
- */
+/** SSE hook for `/documents/{id}/status-stream`. Closes when a terminal status arrives or `active` goes false. */
 export function useDocumentStatusStream(
   documentId: string | undefined,
   active: boolean,
   onStatusChange: (status: DocumentStatus, error?: string | null) => void,
 ) {
-  // Keep a stable ref to avoid restarting the stream on every render.
   const onStatusChangeRef = useRef(onStatusChange)
   onStatusChangeRef.current = onStatusChange
 

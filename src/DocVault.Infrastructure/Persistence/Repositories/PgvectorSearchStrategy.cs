@@ -5,23 +5,12 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Pgvector;
 
-
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
-/// <summary>
-/// Chunk-level semantic search using pgvector cosine similarity on <c>DocumentChunks</c>.
-/// Groups by document, picks the closest chunk per document, and converts distance to a score.
-/// Activated when a query embedding is available, the database is PostgreSQL, and no text terms
-/// are present (the <see cref="HybridSearchStrategy"/> is preferred when both vector and terms exist).
-/// </summary>
 internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
 {
   private const double DistanceThreshold = 0.7;
   private const int    CandidateLimit    = 50;
-  /// <summary>
-  /// Over-fetch from the HNSW index to ensure we still find enough owner-matching docs
-  /// after ownership filtering in vec_best.
-  /// </summary>
   private const int    AnnPrefetch       = CandidateLimit * 5;
   private const int    CommandTimeoutSec = 30;
 
@@ -39,8 +28,6 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
   {
     var ownerFilter = ownerId.HasValue ? """AND d."OwnerId" = @ownerId""" : string.Empty;
 
-    // vec_candidates: ORDER BY + LIMIT triggers the HNSW index — no JOINs here.
-    // vec_best: DISTINCT ON picks the closest chunk per document; ownership filter applied after ANN.
     var sql = $"""
         WITH vec_candidates AS (
             SELECT
@@ -72,8 +59,7 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
     try
     {
       var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-
-      var raw = new List<(DocumentId Id, string? ChunkText, double Distance, string Title, string FileName)>();
+      var raw  = new List<(DocumentId Id, string? ChunkText, double Distance, string Title, string FileName)>();
 
       using (var cmd = new NpgsqlCommand(sql, conn) { CommandTimeout = CommandTimeoutSec })
       {
@@ -94,8 +80,7 @@ internal sealed class PgvectorSearchStrategy : IDocumentSearchStrategy
             reader.GetString(4)));
       }
 
-      var tags = await LoadTagsAsync(conn, raw.Select(r => r.Id.Value).ToArray(), ct);
-
+      var tags  = await LoadTagsAsync(conn, raw.Select(r => r.Id.Value).ToArray(), ct);
       var items = raw
         .Select(r => new SearchResultItem(
             new DocumentSearchSummary(r.Id, r.Title, r.FileName,

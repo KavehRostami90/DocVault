@@ -49,6 +49,7 @@ public static class DependencyInjection
       services.AddScoped(sp =>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
       services.AddSingleton<IWorkQueue<IndexingWorkItem>>(_ => new ChannelWorkQueue<IndexingWorkItem>(5_000));
+      services.AddScoped<IIndexingQueueRepository, ChannelIndexingQueueRepository>();
     }
     else
     {
@@ -61,6 +62,7 @@ public static class DependencyInjection
       services.AddScoped(sp =>
         sp.GetRequiredService<IDbContextFactory<DocVaultDbContext>>().CreateDbContext());
       services.AddSingleton<IWorkQueue<IndexingWorkItem>, PostgresWorkQueue>();
+      services.AddScoped<IIndexingQueueRepository, EfIndexingQueueRepository>();
     }
 
     // ASP.NET Core Identity

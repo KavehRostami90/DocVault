@@ -6,6 +6,7 @@ using DocVault.Api.Services;
 using DocVault.Api.Validation;
 using DocVault.Application;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Background;
 using DocVault.Infrastructure;
 using DocVault.Infrastructure.Auth;
 using DocVault.Infrastructure.Health;
@@ -22,6 +23,11 @@ public static class DependencyInjection
   {
     services.AddInfrastructure(configuration);
     services.AddApplication(configuration);
+
+    // Ensure the host outlasts the IndexingWorker drain window so in-flight embedding
+    // calls get their full DrainTimeoutSeconds to complete before being cancelled.
+    var drainSecs = configuration.GetValue<int>($"{IndexingWorkerOptions.SectionName}:DrainTimeoutSeconds", 30);
+    services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(drainSecs + 15));
 
 
     // CORS — allow credentials when specific origins are configured (required for httpOnly cookie cross-origin)

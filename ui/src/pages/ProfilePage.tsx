@@ -103,7 +103,6 @@ export default function ProfilePage() {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Header card */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center gap-5">
         <div className="w-16 h-16 rounded-full bg-indigo-600/30 flex items-center justify-center flex-shrink-0">
           <span className="text-indigo-300 text-2xl font-bold">{initials}</span>
@@ -117,7 +116,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Account info */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl divide-y divide-slate-800">
         <div className="p-4 flex items-center gap-3">
           <Mail className="w-4 h-4 text-slate-500 flex-shrink-0" />
@@ -142,7 +140,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Edit display name */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -196,7 +193,6 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* Reset password — admin only, no current password required */}
       {user.role === 'Admin' && (
         <div className="bg-slate-900 border border-amber-500/20 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">
@@ -243,7 +239,6 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Change password — not for guests */}
       {!user.isGuest && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2">

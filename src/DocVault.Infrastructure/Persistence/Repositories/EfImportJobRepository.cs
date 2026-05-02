@@ -33,16 +33,10 @@ public class EfImportJobRepository : IImportJobRepository
   public Task<ImportJob?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     => _db.ImportJobs.FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
 
-  /// <summary>
-  /// Returns all jobs whose status is <see cref="ImportStatus.Pending"/> or
-  /// <see cref="ImportStatus.InProgress"/>. Used by the background worker on
-  /// startup to recover from process crashes.
-  /// </summary>
-  /// <param name="cancellationToken">Cancellation token.</param>
-  /// <returns>A read-only list of jobs requiring processing.</returns>
-  public async Task<IReadOnlyList<ImportJob>> GetPendingAsync(CancellationToken cancellationToken = default)
+  /// <inheritdoc />
+  public async Task<IReadOnlyList<ImportJob>> GetInProgressAsync(CancellationToken cancellationToken = default)
     => await _db.ImportJobs
-      .Where(j => j.Status == ImportStatus.Pending || j.Status == ImportStatus.InProgress)
+      .Where(j => j.Status == ImportStatus.InProgress)
       .ToListAsync(cancellationToken);
 
   /// <summary>Updates an existing <see cref="ImportJob"/> and saves changes.</summary>

@@ -24,13 +24,14 @@ Orchestrates use cases. Depends on Domain; no web or EF dependencies.
 | Interface | Purpose |
 |---|---|
 | `IDocumentRepository` | Document CRUD + search |
-| `IImportJobRepository` | Job CRUD + `GetPendingAsync` |
+| `IImportJobRepository` | Job CRUD + `GetInProgressAsync` (crash recovery) |
+| `IIndexingQueueRepository` | Stages an `IndexingQueueEntry` inside the current UoW transaction — no flush; committed atomically with `ImportJob` |
 | `ITagRepository` | Tag read/write |
 | `IFileStorage` | Binary blob read/write |
 | `ITextExtractor` | Plaintext extraction from streams |
 | `IEmbeddingProvider` | Vector embedding generation (`float[]`) |
 | `ISearchResultCache` | Short-lived cache for search result pages; keyed by `search:{userId}:{query}:{page}:{size}` |
-| `IWorkQueue<T>` | Background task queue |
+| `IWorkQueue<T>` | Background task dequeue loop (used by `IndexingWorker`; not used for enqueue from handlers) |
 | `IDomainEventDispatcher` | In-process domain event routing |
 | `IIngestionPipeline` | Runs all ingestion stages, returns `IngestionResult` |
 | `IQuestionAnsweringService` | Generates answers from a question + context chunks; `AnswerAsync` (blocking) + `AnswerStreamAsync` (streaming `IAsyncEnumerable<string>`) |
@@ -105,12 +106,17 @@ ImportDocumentHandler
   ├─ Store binary → IFileStorage
   ├─ Create Document aggregate (Status: Pending → Imported + DocumentImported event)
   ├─ Create ImportJob (Status: Pending, DocumentId set)
-  └─ Enqueue IndexingWorkItem(JobId, StoragePath, ContentType)
+  └─ ExecuteInTransactionAsync ──────────────────────────────────────────┐
+       ├─ IDocumentRepository.AddAsync(document)                          │
+       ├─ IImportJobRepository.AddAsync(job)                              │ single
+       └─ IIndexingQueueRepository.AddAsync(workItem)  ← atomic enqueue  │ DB tx
+                                                       ──────────────────┘
            │
            ▼
 IndexingWorker (BackgroundService)
-  ├─ On startup: recover Pending/InProgress jobs (crash recovery)
-  ├─ Dequeue IndexingWorkItem
+  ├─ On startup: recover InProgress jobs only (crash recovery)
+  │    └─ IImportJobRepository.GetInProgressAsync() → re-enqueue via IWorkQueue
+  ├─ Dequeue IndexingWorkItem from IWorkQueue
   ├─ ImportJob → InProgress
   ├─ Run IngestionPipeline → returns IngestionResult { Text, Embedding }
   │    ├─ FileReadStage      reads stream from IFileStorage
@@ -126,9 +132,96 @@ IndexingWorker (BackgroundService)
 
 ### Re-indexing
 
-An admin can call `POST /admin/documents/{id}/reindex` to re-queue any document that is not in `Pending` state. `Document.PrepareForReindex()` resets the document back to `Imported` status so the worker picks it up again.
+An admin can call `POST /admin/documents/{id}/reindex` to re-queue any document that is not in `Pending` state. `Document.PrepareForReindex()` resets the document back to `Imported` status so the worker picks it up again. The reindex handler also uses `IIndexingQueueRepository` inside `ExecuteInTransactionAsync` — the same transactional guarantee applies.
 
-## Search Architecture
+## Background Job Queue
+
+### Why a transactional queue?
+
+The original design called `IWorkQueue.Enqueue()` **after** the database transaction that persisted `Document` and `ImportJob`. This created a crash window:
+
+```
+Transaction commits (Document + ImportJob written)
+    ↓
+Process crashes here  ← IndexingWorkItem is LOST
+    ↓
+IWorkQueue.Enqueue() never called
+```
+
+On restart, the `Pending` job in the DB had no corresponding queue entry. It was only recovered the next time `IndexingWorker` started (startup recovery). In a long-running production process this could delay indexing indefinitely.
+
+### The fix — transactional enqueue
+
+The `IndexingQueueEntry` row is now written inside the **same database transaction** as `Document` and `ImportJob`:
+
+```
+BEGIN TRANSACTION
+  ├─ INSERT INTO Documents
+  ├─ INSERT INTO ImportJobs
+  └─ INSERT INTO IndexingQueue  ← atomic with the business rows
+COMMIT  (or ROLLBACK on any failure — all three rows succeed or none do)
+```
+
+This is implemented via `IIndexingQueueRepository`:
+
+| Implementation | Used when | Behaviour |
+|---|---|---|
+| `EfIndexingQueueRepository` | PostgreSQL / production | Stages `IndexingQueueEntry` on the shared `DbContext`; **does NOT call `SaveChanges`** — the UoW transaction flushes it |
+| `ChannelIndexingQueueRepository` | In-memory / dev / tests | Delegates to `IWorkQueue<T>.Enqueue()` (the channel IS the queue) |
+
+### Crash recovery — what still needs recovery?
+
+After the fix, `Pending` jobs always have a durable `IndexingQueue` row. Only `InProgress` jobs need recovery — their queue row was deleted when `IndexingWorker` dequeued the item, but the process died before `Completed`/`Failed` was written. `IndexingWorker.RecoverPendingJobsAsync` (misnamed; now calls `GetInProgressAsync`) re-inserts those work items into the queue on startup.
+
+```
+Recovery scope after fix:
+  Pending   → always has IndexingQueue row ✅ — recovered by the queue itself
+  InProgress → queue row already consumed  ⚠️ — re-queued on startup by IndexingWorker
+  Completed  → nothing to recover
+  Failed     → nothing to recover (may be re-queued via admin reindex)
+```
+
+### Why this is not the full Outbox Pattern
+
+The [Transactional Outbox Pattern](https://microservices.io/patterns/data/transactional-outbox.html) involves:
+
+1. Writing business rows + an outbox event in the same transaction
+2. A separate **relay process** that reads the outbox and publishes to an external message broker (Kafka, RabbitMQ)
+3. A consumer that reads from the broker
+
+DocVault's design skips the relay and broker — `IndexingWorker` reads `IndexingQueue` directly. This gives the same atomicity guarantee with far less operational overhead, at the cost of no fan-out and no message replay.
+
+### Scaling path — adding Kafka
+
+When DocVault needs to scale beyond a single process or fan events out to multiple consumers (analytics, notifications, search re-ranking), the architecture can be extended:
+
+```
+┌─ same DB transaction ──────────────────────────────────┐
+│  INSERT Documents                                       │
+│  INSERT ImportJobs                                      │
+│  INSERT IndexingQueue { type, payload, Published=false }│
+└────────────────────────────────────────────────────────┘
+        │
+   Outbox Relay (BackgroundService or Debezium CDC)
+        │ polls IndexingQueue WHERE Published = false
+        ▼
+   Kafka topic "docvault.indexing"
+        │
+   IndexingWorker  (Kafka consumer group — scales horizontally)
+```
+
+Two relay options:
+
+| Option | Pros | Cons |
+|---|---|---|
+| **Custom poller** — `BackgroundService` that SELECT-polls `IndexingQueue WHERE Published = false` and produces to Kafka | No extra infrastructure | Polling latency (~500 ms), polling load |
+| **Debezium CDC** — reads Postgres WAL directly | Near-zero latency, no polling | Requires Kafka Connect cluster, more ops complexity |
+
+**When to switch:** when DocVault splits into separate services, needs event replay / audit log, or requires multiple independent consumers of the same document event.
+
+
+
+## Search Strategy
 
 Search uses a **chain-of-responsibility** pattern. `EfDocumentRepository.SearchAsync` iterates the strategy list and delegates to the first one where `CanHandle()` returns `true`:
 

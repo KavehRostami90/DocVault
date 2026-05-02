@@ -18,7 +18,7 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-const SESSION_KEY = 'dv_access_token'
+const SESSION_KEY      = 'dv_access_token'
 const SESSION_USER_KEY = 'dv_user'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -29,13 +29,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   })
 
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Prevents state updates and timer scheduling after the component unmounts.
-  const isMounted = useRef(true)
+  const isMounted    = useRef(true)
 
   const scheduleRefresh = useCallback((expiresInSeconds: number) => {
     if (!isMounted.current) return
     if (refreshTimer.current) clearTimeout(refreshTimer.current)
-    // Refresh 60 seconds before expiry
     const delay = Math.max((expiresInSeconds - 60) * 1000, 5000)
     refreshTimer.current = setTimeout(async () => {
       try {
@@ -46,7 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         scheduleRefresh(res.expiresIn)
       } catch {
         if (!isMounted.current) return
-        // Refresh failed — clear session
         sessionStorage.removeItem(SESSION_KEY)
         sessionStorage.removeItem(SESSION_USER_KEY)
         setState({ user: null, accessToken: null, isLoading: false })
@@ -54,14 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, delay)
   }, [])
 
-  // On mount: restore token from sessionStorage then try a silent refresh to verify it's still valid
   useEffect(() => {
     const storedToken = sessionStorage.getItem(SESSION_KEY)
-    const storedUser = sessionStorage.getItem(SESSION_USER_KEY)
+    const storedUser  = sessionStorage.getItem(SESSION_USER_KEY)
 
     if (storedToken && storedUser) {
       setState({ user: JSON.parse(storedUser), accessToken: storedToken, isLoading: false })
-      // Silently refresh to extend session
       authApi.refresh()
         .then(res => {
           sessionStorage.setItem(SESSION_KEY, res.accessToken)
@@ -69,11 +64,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           scheduleRefresh(res.expiresIn)
         })
         .catch(() => {
-          // Cookie expired — keep using stored token until it expires
           setState(prev => ({ ...prev, isLoading: false }))
         })
     } else {
-      // Try silent refresh in case cookie is still valid (e.g. new tab)
       authApi.refresh()
         .then(async res => {
           const user = await authApi.me(res.accessToken)
@@ -116,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     const token = sessionStorage.getItem(SESSION_KEY)
     if (token) {
-      try { await authApi.logout(token) } catch { /* ignore */ }
+      try { await authApi.logout(token) } catch { }
     }
     if (refreshTimer.current) clearTimeout(refreshTimer.current)
     sessionStorage.removeItem(SESSION_KEY)

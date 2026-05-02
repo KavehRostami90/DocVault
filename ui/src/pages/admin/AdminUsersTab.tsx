@@ -105,7 +105,6 @@ export default function AdminUsersTab({ filter = 'all', onClearFilter }: Props) 
     }
   }, [filter, users])
 
-  // Reset to page 1 whenever filter changes
   useEffect(() => { setPage(1) }, [filter])
 
   const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE)

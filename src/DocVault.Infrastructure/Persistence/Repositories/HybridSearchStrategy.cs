@@ -8,27 +8,11 @@ using Pgvector;
 
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
-/// <summary>
-/// Hybrid search strategy that fuses chunk-level vector similarity and full-text search rankings
-/// using Reciprocal Rank Fusion (RRF, K=60).
-/// <para>
-/// Top-50 vector candidates are found via the HNSW index (ORDER BY … LIMIT) then the best
-/// chunk per document is selected with DISTINCT ON. Top-50 FTS candidates use ts_rank. Both
-/// lists are merged: <c>rrf = 1/(60+vec_rank) + 1/(60+fts_rank)</c>.
-/// </para>
-/// Activated when a query embedding is available, the database is PostgreSQL, and at least one
-/// text term is present — i.e. it takes priority over <see cref="PgvectorSearchStrategy"/>.
-/// </summary>
 internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
 {
-  private const double DistanceThreshold = 0.8; // slightly relaxed — FTS compensates for weak vector hits
+  private const double DistanceThreshold = 0.8;
   private const int    CandidateLimit    = 50;
   private const int    RrfK              = 60;
-  /// <summary>
-  /// How many ANN rows to pre-fetch before ownership filtering and DISTINCT ON.
-  /// Over-fetching ensures we still get <see cref="CandidateLimit"/> owner-matching docs
-  /// even when some of the top-K vectors belong to other users.
-  /// </summary>
   private const int    AnnPrefetch       = CandidateLimit * 5;
   private const int    CommandTimeoutSec = 30;
 
@@ -44,10 +28,8 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
     float[]? queryVector,
     CancellationToken ct)
   {
-    // Applied inside both vec and fts CTEs so ownership is filtered before any large intermediate set.
     var ownerFilter = ownerId.HasValue ? """AND d."OwnerId" = @ownerId""" : string.Empty;
-
-    var tsQuery = BuildTsQuery(terms);
+    var tsQuery     = BuildTsQuery(terms);
 
     var ftsBlock = string.IsNullOrEmpty(tsQuery)
       ? """
@@ -70,9 +52,6 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
         ),
         """;
 
-    // vec_candidates: HNSW-indexed ANN — ORDER BY + LIMIT is the access pattern pgvector needs.
-    // No joins here to avoid defeating the index plan; ownership is applied in vec_best.
-    // vec_best: DISTINCT ON picks the closest chunk per document, then post-filters by threshold and owner.
     var sql = $"""
         WITH vec_candidates AS (
             SELECT
@@ -121,8 +100,7 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
     try
     {
       var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-
-      var raw = new List<(DocumentId Id, string? ChunkText, double Score, string Title, string FileName)>();
+      var raw  = new List<(DocumentId Id, string? ChunkText, double Score, string Title, string FileName)>();
 
       using (var cmd = new NpgsqlCommand(sql, conn) { CommandTimeout = CommandTimeoutSec })
       {
@@ -145,8 +123,7 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
             reader.GetString(4)));
       }
 
-      var tags = await LoadTagsAsync(conn, raw.Select(r => r.Id.Value).ToArray(), ct);
-
+      var tags  = await LoadTagsAsync(conn, raw.Select(r => r.Id.Value).ToArray(), ct);
       var items = raw
         .Select(r => new SearchResultItem(
             new DocumentSearchSummary(r.Id, r.Title, r.FileName,
@@ -201,6 +178,6 @@ internal sealed partial class HybridSearchStrategy : IDocumentSearchStrategy
     return string.Join(" | ", safe);
   }
 
-  [GeneratedRegex(@"[^a-zA-Z0-9\u00C0-\u024F\-_]")]
+  [GeneratedRegex(@"[^a-zA-Z0-9À-ɏ\-_]")]
   private static partial Regex SafeTerm();
 }

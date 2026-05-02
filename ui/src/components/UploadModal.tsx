@@ -179,7 +179,6 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
       <div className="w-full max-w-2xl bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]">
 
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-800 shrink-0">
           <div>
             <h2 className="text-lg font-semibold text-white">Upload Documents</h2>
@@ -194,10 +193,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 min-h-0">
-
-          {/* Drop zone */}
           <div
             onClick={() => { if (canSelectFile) inputRef.current?.click() }}
             onDragOver={e => { if (!canSelectFile) return; e.preventDefault(); setDragging(true) }}
@@ -250,7 +246,6 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
             </div>
           )}
 
-          {/* File list */}
           {entries.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -277,7 +272,6 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between gap-3 p-6 border-t border-slate-800 shrink-0">
           <p className="text-xs text-slate-600">
             {pendingValid.length} ready

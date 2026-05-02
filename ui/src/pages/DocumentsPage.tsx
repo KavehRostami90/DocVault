@@ -8,7 +8,7 @@ import UploadModal from '../components/UploadModal'
 import Pagination from '../components/Pagination'
 import type { DocumentListItem, PageResponse } from '../types'
 
-const STATUSES = ['Pending', 'Imported', 'Indexed', 'Failed']
+const STATUSES = ['Imported', 'Indexed', 'Failed']
 const PAGE_SIZE = 12
 
 export default function DocumentsPage() {
@@ -38,11 +38,9 @@ export default function DocumentsPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Silently poll while any visible document is still processing.
-  // Does NOT set loading state so cards don't flash to skeletons every 5 s.
   useEffect(() => {
     if (!data) return
-    const hasPending = data.items.some(d => d.status === 'Pending' || d.status === 'Imported')
+    const hasPending = data.items.some(d => d.status === 'Imported')
     if (!hasPending) return
 
     const id = setInterval(async () => {
@@ -54,9 +52,7 @@ export default function DocumentsPage() {
           tag: tagFilter || undefined,
         })
         setData(result)
-      } catch {
-        // silent — a failed background poll is not worth showing an error
-      }
+      } catch { }
     }, 5_000)
 
     return () => clearInterval(id)
@@ -64,7 +60,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     listTags()
       .then(ts => setTags(ts.map(t => t.name)))
-      .catch(() => { /* tags are optional */ })
+      .catch(() => { })
   }, [])
 
   const totalPages = data ? Math.ceil(data.totalCount / PAGE_SIZE) : 1

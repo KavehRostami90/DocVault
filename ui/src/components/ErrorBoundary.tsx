@@ -10,10 +10,7 @@ interface State {
   error?: Error
 }
 
-/**
- * Catches unhandled render errors in child components and renders a
- * user-friendly fallback instead of crashing the whole page.
- */
+/** Catches unhandled render errors and renders a fallback instead of crashing the page. */
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false }
 

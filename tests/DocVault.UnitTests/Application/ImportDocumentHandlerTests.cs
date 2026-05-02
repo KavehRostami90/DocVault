@@ -29,14 +29,14 @@ public sealed class ImportDocumentHandlerTests
         Mock<IDocumentRepository> DocRepo,
         Mock<IImportJobRepository> JobRepo,
         Mock<IFileStorage> Storage,
-        Mock<IWorkQueue<IndexingWorkItem>> Queue,
+        Mock<IIndexingQueueRepository> Queue,
         Mock<IUnitOfWork> UoW)
     BuildHandler()
     {
         var docRepo = new Mock<IDocumentRepository>();
         var jobRepo = new Mock<IImportJobRepository>();
         var storage = new Mock<IFileStorage>();
-        var queue   = new Mock<IWorkQueue<IndexingWorkItem>>();
+        var queue   = new Mock<IIndexingQueueRepository>();
         var uow     = new Mock<IUnitOfWork>();
 
         // UoW executes action inline (no real transaction in unit tests)
@@ -60,7 +60,7 @@ public sealed class ImportDocumentHandlerTests
         var result = await handler.HandleAsync(MakeCommand());
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(result.Value);
+        Assert.NotEqual(default, result.Value);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class ImportDocumentHandlerTests
 
         await handler.HandleAsync(MakeCommand());
 
-        queue.Verify(q => q.Enqueue(It.IsAny<IndexingWorkItem>()), Times.Once);
+        queue.Verify(q => q.AddAsync(It.IsAny<IndexingWorkItem>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -145,6 +145,29 @@ public sealed class ImportDocumentHandlerTests
         uow.Verify(u => u.ExecuteInTransactionAsync(
             It.IsAny<Func<CancellationToken, Task>>(),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_EnqueuesWorkItemInsideTransaction()
+    {
+        var (handler, _, _, _, queue, uow) = BuildHandler();
+
+        var enqueuedDuringTx = false;
+        var txExecuted = false;
+
+        uow.Setup(u => u.ExecuteInTransactionAsync(It.IsAny<Func<CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+           .Returns<Func<CancellationToken, Task>, CancellationToken>(async (action, ct) =>
+           {
+               queue.Setup(q => q.AddAsync(It.IsAny<IndexingWorkItem>(), It.IsAny<CancellationToken>()))
+                    .Callback(() => enqueuedDuringTx = !txExecuted)
+                    .Returns(Task.CompletedTask);
+               await action(ct);
+               txExecuted = true;
+           });
+
+        await handler.HandleAsync(MakeCommand());
+
+        Assert.True(enqueuedDuringTx, "Queue.AddAsync must be called inside the transaction, not after.");
     }
 
     [Fact]
