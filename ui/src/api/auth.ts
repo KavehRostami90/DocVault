@@ -25,7 +25,7 @@ export interface RefreshResponse {
 async function call<T>(path: string, init: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}/api/v1${path}`, {
     ...init,
-    credentials: 'include', // send httpOnly refresh-token cookie
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...init.headers },
   })
   if (!r.ok) throw new Error(await parseApiError(r))

@@ -20,13 +20,11 @@ export default function App() {
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-            {/* Protected app shell */}
             <Route
               path="/"
               element={
@@ -41,7 +39,6 @@ export default function App() {
               <Route path="search" element={<SearchPage />} />
               <Route path="profile" element={<ProfilePage />} />
 
-              {/* Admin-only */}
               <Route
                 path="admin"
                 element={
@@ -52,7 +49,6 @@ export default function App() {
               />
             </Route>
 
-            {/* Fallback */}
             <Route path="*" element={<Navigate to="/documents" replace />} />
           </Routes>
         </AuthProvider>

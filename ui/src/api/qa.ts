@@ -12,10 +12,7 @@ export function askQuestion(payload: AskQuestionPayload): Promise<QaResponse> {
   return post('/qa/ask', payload)
 }
 
-/**
- * Streaming variant — calls onToken for each LLM token delta as it arrives.
- * Resolves when the stream is complete. Pass an AbortSignal to cancel.
- */
+/** Streaming variant — calls onToken per LLM delta; resolves when stream ends. */
 export function askQuestionStream(
   payload: AskQuestionPayload,
   onToken: (token: string) => void,

@@ -46,8 +46,6 @@ export default function AdminDocumentsTab({ filter = 'all', onClearFilter }: Pro
       allCheckboxRef.current.indeterminate = someSelected
   }, [someSelected])
 
-  // Poll while any document on the current page is still processing,
-  // so the status column updates automatically when the worker finishes.
   useEffect(() => {
     const hasPending = docs.some(d => d.status === 'Imported')
     if (!hasPending) return

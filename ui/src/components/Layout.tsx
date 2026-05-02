@@ -9,7 +9,6 @@ export default function Layout() {
   const { user, logout, getToken } = useAuth()
   const navigate = useNavigate()
 
-  // Wire up the API client with the current token and the 401 handler
   initClient(getToken, () => navigate('/login', { replace: true }))
 
   async function handleLogout() {
