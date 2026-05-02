@@ -179,7 +179,6 @@ public static class DocumentsEndpoints
       HttpResponse response,
       CancellationToken ct) =>
     {
-      // Subscribe before querying to avoid missing events due to race conditions.
       var reader = broadcaster.Subscribe(id);
       try
       {
@@ -197,7 +196,6 @@ public static class DocumentsEndpoints
         response.Headers.CacheControl = "no-cache";
         response.Headers.Append("X-Accel-Buffering", "no");
 
-        // Already in a terminal state — emit once and close.
         if (doc.Status is DocumentStatus.Indexed or DocumentStatus.Failed)
         {
           await WriteSseEventAsync(response, doc.Id.Value, doc.Status, doc.IndexingError, ct);
@@ -210,10 +208,9 @@ public static class DocumentsEndpoints
           if (evt.Status is DocumentStatus.Indexed or DocumentStatus.Failed) break;
         }
       }
-      catch (OperationCanceledException) { /* client disconnected */ }
+      catch (OperationCanceledException) { }
       finally
       {
-        // Unsubscribe completes the channel writer so ReadAllAsync terminates cleanly.
         broadcaster.Unsubscribe(id, reader);
       }
     })

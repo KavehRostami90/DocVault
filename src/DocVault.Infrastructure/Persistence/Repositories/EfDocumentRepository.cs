@@ -9,11 +9,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DocVault.Infrastructure.Persistence.Repositories;
 
-/// <summary>
-/// EF Core implementation of <see cref="IDocumentRepository"/>.
-/// Repositories only stage changes via the EF change tracker; callers flush via <see cref="IUnitOfWork"/>.
-/// Search is delegated to the first matching <see cref="IDocumentSearchStrategy"/> (registered by priority).
-/// </summary>
 internal class EfDocumentRepository : IDocumentRepository
 {
   private readonly DocVaultDbContext _db;

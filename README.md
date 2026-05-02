@@ -999,4 +999,5 @@ Production secrets required in GitHub Actions environment:
 - [System Design](docs/system-design.md)
 - [API Reference](docs/api.md)
 - [Data Model](docs/data-model.md)
+- [Contributing & Development Guide](docs/contributing.md)
 - [Production Readiness Plan](docs/production-readiness-plan.md)

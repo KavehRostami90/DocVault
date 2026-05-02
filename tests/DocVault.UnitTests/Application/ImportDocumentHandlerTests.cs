@@ -60,7 +60,7 @@ public sealed class ImportDocumentHandlerTests
         var result = await handler.HandleAsync(MakeCommand());
 
         Assert.True(result.IsSuccess);
-        Assert.NotNull(result.Value);
+        Assert.NotEqual(default, result.Value);
     }
 
     [Fact]

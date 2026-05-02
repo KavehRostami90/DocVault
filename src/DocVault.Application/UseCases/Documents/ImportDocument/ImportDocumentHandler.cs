@@ -53,9 +53,6 @@ public sealed class ImportDocumentHandler : ICommandHandler<ImportDocumentComman
     var job     = new ImportJob(Guid.NewGuid(), documentId, command.FileName, storagePath, command.ContentType);
     var workItem = new IndexingWorkItem(job.Id, storagePath, command.ContentType);
 
-    // Persist the document, import job, and queue entry atomically.
-    // The queue row is committed in the same transaction so a process crash
-    // between these writes can never leave a job without a queue entry.
     await _unitOfWork.ExecuteInTransactionAsync(async ct =>
     {
       await _documents.AddAsync(document, ct);

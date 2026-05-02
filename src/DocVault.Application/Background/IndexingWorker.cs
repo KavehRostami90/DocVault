@@ -12,13 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace DocVault.Application.Background;
 
-/// <summary>
-/// Long-running hosted service that drains the indexing queue.
-/// On startup it recovers any Pending or InProgress jobs left behind by a previous crash.
-/// Up to <see cref="IndexingWorkerOptions.MaxDegreeOfParallelism"/> documents are processed
-/// concurrently; this single knob controls back-pressure across the embedding API, the DB
-/// connection pool, CPU (OCR / PDF extraction), and file storage I/O.
-/// </summary>
+/// <summary>Background service that drains the indexing queue. Recovers InProgress jobs on startup.</summary>
 public sealed partial class IndexingWorker : BackgroundService
 {
   private readonly IWorkQueue<IndexingWorkItem> _queue;
@@ -57,17 +51,8 @@ public sealed partial class IndexingWorker : BackgroundService
 
     LogWorkerStarted(_logger, _options.MaxDegreeOfParallelism);
 
-    // Separate CTS for in-flight work. stoppingToken controls when we stop
-    // accepting new items; jobCts controls the work itself. This lets the drain
-    // phase give jobs time to finish (embedding retries, DB writes) before
-    // forcefully cancelling them, avoiding jobs being left InProgress on every
-    // clean shutdown.
-    using var jobCts = new CancellationTokenSource();
-
-    // Semaphore acquired BEFORE dequeuing — this is the backpressure point.
-    // We never pull more items from the queue than we can immediately process,
-    // so queue ordering is preserved and resources (DB pool, embedding API) are capped.
-    using var semaphore   = new SemaphoreSlim(_options.MaxDegreeOfParallelism, _options.MaxDegreeOfParallelism);
+    using var jobCts     = new CancellationTokenSource();
+    using var semaphore  = new SemaphoreSlim(_options.MaxDegreeOfParallelism, _options.MaxDegreeOfParallelism);
     var       activeTasks = new ConcurrentDictionary<Task, byte>();
 
     while (!stoppingToken.IsCancellationRequested)
@@ -88,25 +73,18 @@ public sealed partial class IndexingWorker : BackgroundService
       }
       catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
       {
-        semaphore.Release(); // return the slot — no item was taken
+        semaphore.Release();
         break;
       }
 
-      // Pass jobCts.Token (not stoppingToken) so jobs can complete during drain.
       var task = ProcessAndReleaseAsync(item, semaphore, jobCts.Token);
       activeTasks.TryAdd(task, 0);
-      // Clean up the tracking dict when the task finishes.
-      // ContinueWith with TaskScheduler.Default always posts to the thread pool,
-      // so TryAdd above is guaranteed to run before this continuation.
       _ = task.ContinueWith(t => activeTasks.TryRemove(t, out _), TaskScheduler.Default);
     }
 
     if (activeTasks.Count == 0)
       return;
 
-    // Graceful drain: give in-flight jobs DrainTimeoutSeconds to complete.
-    // If they don't finish in time, cancel them — they'll stay InProgress and
-    // will be recovered on next startup via RecoverPendingJobsAsync.
     LogDraining(_logger, activeTasks.Count);
 
     var drainTimeout = TimeSpan.FromSeconds(_options.DrainTimeoutSeconds);
@@ -118,22 +96,16 @@ public sealed partial class IndexingWorker : BackgroundService
       var remaining = activeTasks.Keys.Count(t => !t.IsCompleted);
       LogDrainTimedOut(_logger, remaining, _options.DrainTimeoutSeconds);
       await jobCts.CancelAsync();
-      // Give cancellation a short window to propagate before we exit.
       try { await drainTask.WaitAsync(TimeSpan.FromSeconds(5)); }
-      catch { /* individual failures and cancellations are logged inside ProcessItemAsync */ }
+      catch { }
     }
     else
     {
       try { await drainTask; }
-      catch { /* individual failures are already logged inside ProcessItemAsync */ }
+      catch { }
     }
   }
 
-  /// <summary>
-  /// Wraps <see cref="ProcessItemAsync"/> so the semaphore slot is always released,
-  /// and any exception that escapes the inner error-handling is logged rather than
-  /// crashing the worker loop.
-  /// </summary>
   private async Task ProcessAndReleaseAsync(
     IndexingWorkItem item,
     SemaphoreSlim semaphore,
@@ -145,8 +117,6 @@ public sealed partial class IndexingWorker : BackgroundService
     }
     catch (Exception ex) when (!ct.IsCancellationRequested)
     {
-      // ProcessItemAsync has its own catch + MarkFailed path.
-      // This catches anything that escapes it (e.g. a failure inside MarkFailedAsync itself).
       LogUnhandledWorkerError(_logger, item.JobId, ex);
     }
     finally
@@ -160,9 +130,6 @@ public sealed partial class IndexingWorker : BackgroundService
     using var scope = _scopeFactory.CreateScope();
     var repo = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
 
-    // Only InProgress jobs need re-queuing: their queue row was already deleted when
-    // the worker dequeued them, but the process died before they completed.
-    // Pending jobs still have a durable queue row and will be picked up automatically.
     var inProgress = await repo.GetInProgressAsync(ct);
     foreach (var job in inProgress)
       _queue.Enqueue(new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType));

@@ -221,6 +221,8 @@ Two relay options:
 
 
 
+## Search Strategy
+
 Search uses a **chain-of-responsibility** pattern. `EfDocumentRepository.SearchAsync` iterates the strategy list and delegates to the first one where `CanHandle()` returns `true`:
 
 ```
