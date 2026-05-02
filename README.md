@@ -6,8 +6,32 @@ DocVault is a **self-hosted document repository** with full-text and semantic se
 
 ---
 
+## Why DocVault?
+
+Most document storage solutions make you choose between convenience and control:
+
+- **Cloud drives** (Google Drive, OneDrive) index filenames, not content — and your data lives on someone else's server.
+- **Enterprise search tools** (Elasticsearch, Algolia) require significant infrastructure and expertise to run.
+- **Local folders** are fast but offer no search, no access control, and no way to ask "what does this document say about X?"
+
+DocVault is a single deployable unit that gives a team or individual:
+
+| Need | DocVault answer |
+|---|---|
+| Find documents by what they *say*, not just their name | Hybrid full-text + vector semantic search |
+| Ask questions in plain language | RAG pipeline (question answering against your own library) |
+| Handle scanned PDFs and images | Background OCR via Tesseract |
+| Keep data private and on-premises | Fully self-hosted; no external AI dependency required |
+| Control who sees what | Role-based access (Admin / User / Guest) |
+| Upload and move on | Async background indexing — no waiting for OCR or embedding |
+
+It is intentionally a **monolith** — one `docker compose up` starts everything. No Kubernetes, no separate search cluster, no message broker required.
+
+---
+
 ## Table of Contents
 
+- [Why DocVault?](#why-docvault)
 - [Getting Started](#getting-started)
 - [Features](#features)
 - [Technology Stack](#technology-stack)
@@ -15,6 +39,7 @@ DocVault is a **self-hosted document repository** with full-text and semantic se
 - [API Reference](#api-reference)
 - [Architecture](#architecture)
 - [Document Lifecycle](#document-lifecycle)
+- [Background Job Queue](#background-job-queue)
 - [Search Strategy](#search-strategy)
 - [Question Answering (RAG)](#question-answering-rag)
 - [Realtime Status Updates](#realtime-status-updates)
@@ -23,6 +48,7 @@ DocVault is a **self-hosted document repository** with full-text and semantic se
 - [Pluggable Implementations](#pluggable-implementations)
 - [Configuration Reference](#configuration-reference)
 - [Health Checks](#health-checks)
+- [Design Decisions](#design-decisions)
 - [Project Structure](#project-structure)
 - [Deployment](#deployment)
 
@@ -413,7 +439,7 @@ dotnet ef database update \
 ## Features
 
 - **Upload & store** — multipart file upload with SHA-256 deduplication; supports PDF, DOCX, Markdown, plain text, and images
-- **Background indexing** — an async `BackgroundService` worker extracts text, runs OCR on images, chunks the content into overlapping windows, and generates a vector embedding per chunk; crash-safe with startup recovery
+- **Background indexing** — an async `BackgroundService` worker extracts text, runs OCR on images, chunks the content into overlapping windows, and generates a vector embedding per chunk; the queue entry is written **atomically in the same database transaction** as the import job (transactional queue pattern), so a process crash can never leave a job without a queue entry; crash recovery on startup re-enqueues any `InProgress` jobs
 - **Chunk-level vector indexing** — document text is split into 400-word overlapping chunks (80-word overlap); each chunk is independently embedded and stored in the `DocumentChunks` table with an HNSW index — enabling precise retrieval from long documents where a single document-level embedding would dilute the signal
 - **Semantic search** — pgvector cosine similarity search when Ollama is available; automatically falls back to PostgreSQL full-text (`tsvector`) or in-memory keyword search; results never load the full document text, using lightweight DTO projection instead
 - **Search result caching** — repeated queries for the same query, page, and user are served from a short-lived in-memory cache (2-minute TTL), avoiding redundant embedding calls and vector database round-trips
@@ -660,10 +686,14 @@ POST /documents
        ├─ IFileStorage.StoreAsync()
        ├─ Document created  (Status: Imported)
        ├─ ImportJob created (Status: Pending)
-       └─ IWorkQueue.EnqueueAsync()
+       └─ ExecuteInTransactionAsync ──────────────────────────┐
+            ├─ IDocumentRepository.AddAsync(document)          │ single
+            ├─ IImportJobRepository.AddAsync(job)              │ DB tx
+            └─ IIndexingQueueRepository.AddAsync(workItem)     │ (atomic)
+                                                 ─────────────┘
 
 BackgroundService → IndexingWorker
-  ├─ On startup: recover all Pending / InProgress jobs from DB
+  ├─ On startup: recover InProgress jobs only (queue row was consumed before crash)
   └─ Per work item:
        ├─ ImportJob → InProgress
        ├─ IngestionPipeline:
@@ -677,6 +707,30 @@ BackgroundService → IndexingWorker
        ├─ ImportJob → Completed
        └─ IDocumentStatusBroadcaster.Publish() → SSE clients notified
 ```
+
+---
+
+## Background Job Queue
+
+DocVault uses a **transactional database queue** to guarantee that indexing work is never lost, even if the process crashes immediately after a document upload.
+
+The `IndexingQueueEntry` row is written **inside the same database transaction** as `Document` and `ImportJob` — via `IIndexingQueueRepository.AddAsync()`. If the transaction rolls back for any reason, all three rows are rolled back together. There is no window where a job exists without a corresponding queue entry.
+
+```
+BEGIN TRANSACTION
+  INSERT Documents
+  INSERT ImportJobs
+  INSERT IndexingQueue   ← committed atomically with the business rows
+COMMIT
+```
+
+**Crash recovery:** `IndexingWorker` only recovers `InProgress` jobs on startup (their queue row was consumed before the crash). `Pending` jobs always have a durable queue row and are picked up normally — no special recovery needed.
+
+**Scaling:** two implementations are wired automatically by DI:
+- Dev / in-memory: `ChannelIndexingQueueRepository` → delegates to `IWorkQueue<T>.Enqueue()` (no DB row)
+- Production / PostgreSQL: `EfIndexingQueueRepository` → stages on the shared `DbContext`; `PostgresWorkQueue` uses `SELECT … FOR UPDATE SKIP LOCKED` for safe multi-instance dequeue
+
+**Future — Kafka:** when fan-out, event replay, or microservice decomposition is needed, the `IndexingQueue` table can become a true outbox table with a relay process publishing to Kafka. See [`docs/background-queue.md`](docs/background-queue.md) for the full migration path.
 
 ---
 
@@ -845,6 +899,25 @@ All settings can be overridden via environment variables using the standard `__`
 | `GET /health/ready` | Readiness — can the app serve traffic? | `200 OK` (all checks pass) or `503` (any check fails) |
 
 Readiness checks: **database** connectivity and **file storage** reachability. Used by Docker `HEALTHCHECK` and Azure App Service health probes.
+
+---
+
+## Design Decisions
+
+Key architectural and technology choices are documented as **Architecture Decision Records (ADRs)** in [`docs/decisions/`](docs/decisions/). Each record explains what was decided, why, what alternatives were rejected, and when the decision should be revisited.
+
+| # | Decision |
+|---|---|
+| [ADR-001](docs/decisions/001-monolith-first.md) | Why monolith-first instead of microservices |
+| [ADR-002](docs/decisions/002-transactional-queue.md) | Why a transactional DB queue instead of Kafka / RabbitMQ |
+| [ADR-003](docs/decisions/003-search-fallback-chain.md) | Why the search fallback chain (Hybrid → Vector → FTS → In-Memory) |
+| [ADR-004](docs/decisions/004-result-type-error-handling.md) | Why `Result<T>` instead of exceptions for expected failures |
+| [ADR-005](docs/decisions/005-chunk-level-embeddings.md) | Why chunk-level embeddings instead of document-level |
+| [ADR-006](docs/decisions/006-jwt-cookie-token-split.md) | Why JWT in `sessionStorage` + refresh token in httpOnly cookie |
+| [ADR-007](docs/decisions/007-postgresql-for-everything.md) | Why PostgreSQL for queue, vector search, and full-text search |
+| [ADR-008](docs/decisions/008-pgvector-vs-elasticsearch.md) | Why PostgreSQL + pgvector instead of Elasticsearch |
+| [ADR-009](docs/decisions/009-background-worker-vs-inline.md) | Why background worker instead of inline processing |
+| [ADR-010](docs/decisions/010-embedding-batching.md) | How embedding batching reduces HTTP round-trips from O(n) to O(1) |
 
 ---
 
