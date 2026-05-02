@@ -3,7 +3,7 @@ import { parseApiError } from './errors'
 
 const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ''
 
-// Token accessor injected by AuthProvider — avoids a circular dep on the context
+// Injected by AuthProvider — avoids a circular dep on the context module.
 let _getToken: (() => string | null) | null = null
 let _onUnauthorized: (() => void) | null = null
 
@@ -12,8 +12,6 @@ export function initClient(getToken: () => string | null, onUnauthorized: () => 
   _onUnauthorized = onUnauthorized
 }
 
-// Singleton in-flight refresh promise. Concurrent 401s share one refresh call;
-// the winner's result is applied to all waiters.
 let _refreshPromise: Promise<string> | null = null
 
 async function refreshOnce(): Promise<string> {
@@ -41,8 +39,6 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
 
   let r = await doFetch()
 
-  // On 401: attempt one silent token refresh then retry.
-  // refreshOnce() serialises concurrent calls so only one refresh hits the server.
   if (r.status === 401) {
     try {
       const newToken = await refreshOnce()
@@ -103,11 +99,7 @@ export async function upload<T>(path: string, form: FormData): Promise<T> {
   return request<T>(path, { method: 'POST', body: form })
 }
 
-/**
- * POST a JSON body and stream Server-Sent Events back.
- * Calls `onToken` for every token delta; resolves when `[DONE]` is received.
- * Pass an AbortSignal to cancel mid-stream.
- */
+/** POST a JSON body and stream SSE back. Calls `onToken` per delta; resolves on `[DONE]`. */
 export async function postStream(
   path: string,
   body: unknown,
@@ -131,9 +123,8 @@ export async function postStream(
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
-    // Lines are separated by \n; a blank line separates SSE events.
     const lines = buffer.split('\n')
-    buffer = lines.pop() ?? '' // retain any trailing incomplete line
+    buffer = lines.pop() ?? ''
 
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue
@@ -142,7 +133,7 @@ export async function postStream(
       try {
         const token: string = JSON.parse(data)
         onToken(token)
-      } catch { /* ignore malformed chunks */ }
+      } catch { }
     }
   }
 }

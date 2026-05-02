@@ -85,7 +85,6 @@ export default function DocumentDetailPage() {
 
       const win = window.open(objectUrl, '_blank')
       if (!win) {
-        // Popup blocker prevented the tab from opening — clean up and inform the user.
         window.URL.revokeObjectURL(objectUrl)
         setFileActionError('Preview was blocked — allow popups for this site and try again.')
         return
@@ -168,7 +167,6 @@ export default function DocumentDetailPage() {
 
   const handleAskDocument = async () => {
     if (!id || !question.trim()) return
-    // Cancel any in-flight stream from a previous question.
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
