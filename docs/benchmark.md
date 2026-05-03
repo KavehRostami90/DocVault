@@ -4,7 +4,7 @@
 |---|---|
 | **Date** | 2026-05-03 20:23 |
 | **API** | http://localhost:8081/api/v1 |
-| **Environment** | DESKTOP-D6TA2NN - PowerShell 5.1.26100.8328 |
+| **Environment** | Docker Linux  |
 | **Files tested** | 1000 |
 
 ## Upload
