@@ -86,4 +86,15 @@ internal class EfDocumentRepository : IDocumentRepository
 
     return rows.ToDictionary(x => x.Status.ToString(), x => x.Count);
   }
+
+  public async Task<(long UsedBytes, long DocumentCount)> GetStorageUsedBytesAsync(Guid ownerId, CancellationToken cancellationToken = default)
+  {
+    var result = await _db.Documents
+      .Where(d => d.OwnerId == ownerId)
+      .GroupBy(_ => 1)
+      .Select(g => new { UsedBytes = g.Sum(d => d.Size), Count = (long)g.Count() })
+      .FirstOrDefaultAsync(cancellationToken);
+
+    return result is null ? (0L, 0L) : (result.UsedBytes, result.Count);
+  }
 }

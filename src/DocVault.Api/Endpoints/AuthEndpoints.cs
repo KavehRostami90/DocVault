@@ -5,6 +5,7 @@ using DocVault.Api.Contracts.Auth.Profile;
 using DocVault.Api.Middleware;
 using DocVault.Api.Validation;
 using DocVault.Application.Abstractions.Auth;
+using DocVault.Application.Abstractions.Persistence;
 
 namespace DocVault.Api.Endpoints;
 
@@ -131,6 +132,21 @@ public static class AuthEndpoints
     .RequireAuthorization()
     .Produces<UserInfo>()
     .WithSummary("Get the current authenticated user's profile");
+
+    group.MapGet("/me/storage", async (
+      ICurrentUser currentUser,
+      IDocumentRepository documents,
+      CancellationToken ct) =>
+    {
+      if (!currentUser.IsAuthenticated || currentUser.UserId is null)
+        return Results.Unauthorized();
+
+      var (usedBytes, documentCount) = await documents.GetStorageUsedBytesAsync(currentUser.UserId.Value, ct);
+      return Results.Ok(new StorageUsageResponse(usedBytes, documentCount));
+    })
+    .RequireAuthorization()
+    .Produces<StorageUsageResponse>()
+    .WithSummary("Get the current user's storage usage");
 
     group.MapPut("/me", async (
       UpdateProfileRequest request,
