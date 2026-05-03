@@ -1,13 +1,21 @@
-import { useState } from 'react'
-import { User, Mail, Shield, Calendar, Edit2, Lock, KeyRound, Check, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { User, Mail, Shield, Calendar, Edit2, Lock, KeyRound, Check, X, HardDrive } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { authApi } from '../api/auth'
+import { authApi, getStorageUsage, type StorageUsage } from '../api/auth'
 
 export default function ProfilePage() {
   const { user, getToken, updateProfile } = useAuth()
 
   const [editingName, setEditingName] = useState(false)
   const [displayName, setDisplayName] = useState(user?.displayName ?? '')
+
+  const [storage, setStorage] = useState<StorageUsage | null>(null)
+
+  useEffect(() => {
+    const token = getToken()
+    if (!token) return
+    getStorageUsage(token).then(setStorage).catch(() => {})
+  }, [getToken])
   const [nameError, setNameError] = useState('')
   const [nameSaving, setNameSaving] = useState(false)
 
@@ -30,6 +38,13 @@ export default function ProfilePage() {
   const memberSince = new Date(user.createdAt).toLocaleDateString(undefined, {
     year: 'numeric', month: 'long', day: 'numeric',
   })
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+  }
 
   const roleBadge: Record<string, string> = {
     Admin: 'bg-rose-600/20 text-rose-400 border border-rose-500/30',
@@ -136,6 +151,19 @@ export default function ProfilePage() {
           <div>
             <p className="text-slate-500 text-xs">Member since</p>
             <p className="text-white text-sm">{memberSince}</p>
+          </div>
+        </div>
+        <div className="p-4 flex items-center gap-3">
+          <HardDrive className="w-4 h-4 text-slate-500 flex-shrink-0" />
+          <div>
+            <p className="text-slate-500 text-xs">Storage used</p>
+            {storage === null
+              ? <p className="text-slate-500 text-sm">Loading…</p>
+              : <p className="text-white text-sm">
+                  {formatBytes(storage.usedBytes)}
+                  <span className="text-slate-500 ml-1.5 text-xs">across {storage.documentCount} document{storage.documentCount !== 1 ? 's' : ''}</span>
+                </p>
+            }
           </div>
         </div>
       </div>

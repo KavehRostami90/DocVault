@@ -36,4 +36,9 @@ public interface IDocumentRepository
   /// keyed by status name (e.g. <c>"Pending"</c>, <c>"Indexed"</c>).
   /// </summary>
   Task<Dictionary<string, long>> GetCountsByStatusAsync(CancellationToken cancellationToken = default);
+
+  /// <summary>
+  /// Returns the total storage in bytes and document count for the given owner.
+  /// </summary>
+  Task<(long UsedBytes, long DocumentCount)> GetStorageUsedBytesAsync(Guid ownerId, CancellationToken cancellationToken = default);
 }

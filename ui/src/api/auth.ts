@@ -98,3 +98,18 @@ export const authApi = {
       body: JSON.stringify({ email, token, newPassword }),
     }),
 }
+
+export interface StorageUsage {
+  usedBytes: number
+  documentCount: number
+}
+
+export async function getStorageUsage(token: string): Promise<StorageUsage> {
+  const BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ''
+  const r = await fetch(`${BASE}/api/v1/auth/me/storage`, {
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!r.ok) throw new Error(await parseApiError(r))
+  return r.json()
+}
