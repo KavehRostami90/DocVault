@@ -93,10 +93,13 @@ else
 fi
 
 # ── Validate .env ─────────────────────────────────────────────────────────────
+# -E enables extended regex; ^ anchors to line start so commented-out lines are
+# ignored. The prefix "change-me" catches both the short placeholder and the
+# long default (change-me-to-a-long-random-secret-at-least-32-chars).
 BAD_DEFAULTS=()
-grep -q 'DOCVAULT_DB_PASSWORD=change-me'    "$ENV_FILE" 2>/dev/null && BAD_DEFAULTS+=(DOCVAULT_DB_PASSWORD)    || true
-grep -q 'DOCVAULT_JWT_KEY=change-me'        "$ENV_FILE" 2>/dev/null && BAD_DEFAULTS+=(DOCVAULT_JWT_KEY)        || true
-grep -q 'DOCVAULT_ADMIN_PASSWORD=change-me' "$ENV_FILE" 2>/dev/null && BAD_DEFAULTS+=(DOCVAULT_ADMIN_PASSWORD) || true
+grep -qE '^DOCVAULT_DB_PASSWORD=change-me'    "$ENV_FILE" 2>/dev/null && BAD_DEFAULTS+=(DOCVAULT_DB_PASSWORD)    || true
+grep -qE '^DOCVAULT_JWT_KEY=change-me'        "$ENV_FILE" 2>/dev/null && BAD_DEFAULTS+=(DOCVAULT_JWT_KEY)        || true
+grep -qE '^DOCVAULT_ADMIN_PASSWORD=change-me' "$ENV_FILE" 2>/dev/null && BAD_DEFAULTS+=(DOCVAULT_ADMIN_PASSWORD) || true
 
 if [[ ${#BAD_DEFAULTS[@]} -gt 0 ]]; then
     warn 'These values are still set to the default placeholder:'

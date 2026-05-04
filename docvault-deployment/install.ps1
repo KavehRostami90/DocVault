@@ -147,9 +147,13 @@ if (-not (Test-Path $EnvFile)) {
 # ── Validate .env ─────────────────────────────────────────────────────────────
 $envRaw     = Get-Content $EnvFile -Raw
 $badDefaults = @()
-if ($envRaw -match 'DOCVAULT_DB_PASSWORD=change-me')    { $badDefaults += 'DOCVAULT_DB_PASSWORD' }
-if ($envRaw -match 'DOCVAULT_JWT_KEY=change-me')        { $badDefaults += 'DOCVAULT_JWT_KEY' }
-if ($envRaw -match 'DOCVAULT_ADMIN_PASSWORD=change-me') { $badDefaults += 'DOCVAULT_ADMIN_PASSWORD' }
+# (?m) enables multiline mode so ^ matches the start of each line, not just the
+# start of the whole string. The pattern intentionally uses "change-me" as a
+# prefix so it catches both the short placeholder and the long default from
+# .env.example (change-me-to-a-long-random-secret-at-least-32-chars).
+if ($envRaw -match '(?m)^DOCVAULT_DB_PASSWORD=change-me')    { $badDefaults += 'DOCVAULT_DB_PASSWORD' }
+if ($envRaw -match '(?m)^DOCVAULT_JWT_KEY=change-me')        { $badDefaults += 'DOCVAULT_JWT_KEY' }
+if ($envRaw -match '(?m)^DOCVAULT_ADMIN_PASSWORD=change-me') { $badDefaults += 'DOCVAULT_ADMIN_PASSWORD' }
 
 if ($badDefaults.Count -gt 0) {
     Write-Warn 'These values are still set to the default placeholder:'
