@@ -6,7 +6,11 @@ COPY . .
 RUN dotnet restore DocVault.sln
 RUN dotnet publish src/DocVault.Api/DocVault.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+# bookworm-slim (Debian 12) is used instead of the default Ubuntu Noble base
+# because tesseract-ocr / tesseract-ocr-eng live in Ubuntu's `universe` repo
+# which is not enabled in the official dotnet base image, causing apt-get to
+# exit with code 100. All four packages below are in Debian's `main` repo.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-bookworm-slim AS final
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
