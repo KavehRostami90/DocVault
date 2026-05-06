@@ -17,6 +17,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Database: "Host=db;Port=5432;Database=${DOCVAULT_DB_NAME};Username=${DOCVAULT_DB_USER};Password=${DOCVAULT_DB_PASSWORD}"
+      ConnectionStrings__AzureBlob: ${DOCVAULT_BLOB_CONN_STR:-}
       Auth__JwtSigningKey: ${DOCVAULT_JWT_KEY}
       Auth__AdminEmail: ${DOCVAULT_ADMIN_EMAIL}
       Auth__AdminPassword: ${DOCVAULT_ADMIN_PASSWORD}
@@ -59,16 +60,35 @@ services:
     mem_limit: 512m
     cpus: 0.5
 
-  # ── Ollama (local embedding / QA inference) ───────────────────────────────
-  # Only started when the "ollama" profile is active:
-  #   docker compose --profile ollama up
-  #
-  # Pull the embedding model once after first startup:
-  #   docker compose --profile ollama run --rm ollama-init
-  #
-  # Alternatively, run Ollama natively on your host (https://ollama.com) and
-  # leave this profile off — the api container reaches it via
-  # host.docker.internal:11434 automatically.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    profiles: [azurite]
+    restart: unless-stopped
+    ports:
+      - "10000:10000"  # Blob
+      - "10001:10001"  # Queue
+      - "10002:10002"  # Table
+    volumes:
+      - "C:/DocVault/azurite-data:/data"
+    command: >
+      azurite
+      --blobHost 0.0.0.0
+      --queueHost 0.0.0.0
+      --tableHost 0.0.0.0
+      --location /data
+      --loose
+      --skipApiVersionCheck
+    healthcheck:
+      # Node.js is always available in the Azurite image.
+      # Any HTTP response (even 400/403) means the service is up and accepting connections.
+      test: ["CMD-SHELL",
+             "node -e \"require('http').get('http://localhost:10000/',r=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    mem_limit: 256m
+    cpus: 0.25
   ollama:
     image: ollama/ollama:latest
     profiles: [ollama]
