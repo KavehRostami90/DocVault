@@ -1,0 +1,130 @@
+
+services:
+  ui:
+    image: ghcr.io/kavehrostami90/docvault-ui:latest
+    restart: unless-stopped
+    ports:
+      - "${DOCVAULT_UI_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+    cpus: 0.25
+
+  api:
+    image: ghcr.io/kavehrostami90/docvault:latest
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Database: "Host=db;Port=5432;Database=${DOCVAULT_DB_NAME};Username=${DOCVAULT_DB_USER};Password=${DOCVAULT_DB_PASSWORD}"
+      ConnectionStrings__AzureBlob: ${DOCVAULT_BLOB_CONN_STR:-}
+      Auth__JwtSigningKey: ${DOCVAULT_JWT_KEY}
+      Auth__AdminEmail: ${DOCVAULT_ADMIN_EMAIL}
+      Auth__AdminPassword: ${DOCVAULT_ADMIN_PASSWORD}
+      Upload__MaxFileSizeBytes: ${DOCVAULT_UPLOAD_MAX_FILE_SIZE_BYTES:-52428800}
+      OpenAI__BaseUrl: ${DOCVAULT_OPENAI_BASE_URL}
+      OpenAI__ApiKey: ${DOCVAULT_OPENAI_API_KEY}
+      OpenAI__Model: ${DOCVAULT_OPENAI_MODEL}
+      OpenAI__Dimensions: ${DOCVAULT_OPENAI_DIMENSIONS:-0}
+      QA__Model: ${DOCVAULT_QA_MODEL:-llama3.1}
+    extra_hosts:
+      # Lets the container resolve host.docker.internal on Linux (no-op on Docker Desktop).
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${DOCVAULT_API_PORT:-8080}:8080"
+    volumes:
+      - app-storage:/app/storage
+    mem_limit: 512m
+    cpus: 0.75
+
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DOCVAULT_DB_USER}
+      POSTGRES_PASSWORD: ${DOCVAULT_DB_PASSWORD}
+      POSTGRES_DB: ${DOCVAULT_DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    mem_limit: 512m
+    cpus: 0.5
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    profiles: [azurite]
+    restart: unless-stopped
+    ports:
+      - "10000:10000"  # Blob
+      - "10001:10001"  # Queue
+      - "10002:10002"  # Table
+    volumes:
+      - "C:/DocVault/azurite-data:/data"
+    command: >
+      azurite
+      --blobHost 0.0.0.0
+      --queueHost 0.0.0.0
+      --tableHost 0.0.0.0
+      --location /data
+      --loose
+      --skipApiVersionCheck
+    healthcheck:
+      # Node.js is always available in the Azurite image.
+      # Any HTTP response (even 400/403) means the service is up and accepting connections.
+      test: ["CMD-SHELL",
+             "node -e \"require('http').get('http://localhost:10000/',r=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    mem_limit: 256m
+    cpus: 0.25
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+    mem_limit: 6g
+    cpus: 4.0
+
+  # One-shot init container — pulls the model into the ollama volume.
+  # Safe to re-run; ollama pull is idempotent.
+  ollama-init:
+    image: ollama/ollama:latest
+    profiles: [ollama]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull"]
+    command: ["${DOCVAULT_OLLAMA_MODEL:-nomic-embed-text}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  db-data:
+    driver: local
+  app-storage:
+    driver: local
+  ollama-data:
+    driver: local

@@ -1,9 +1,6 @@
 name: Deploy to Production
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
 
 concurrency:
@@ -12,8 +9,9 @@ concurrency:
 
 jobs:
   build-push:
-    name: Build & Push Docker Image
+    name: Build & Push API Image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -25,13 +23,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Docker metadata
         id: meta
@@ -44,23 +47,76 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'workflow_dispatch' }}
 
-      - name: Build and push
+      - name: Build and push API image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-push-ui:
+    name: Build & Push UI Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Runs in parallel with deploy — produces the self-hosted docker-compose image.
+    # The Azure SWA deploy in the deploy job builds the UI from source independently.
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta-ui
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/docvault-ui
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push UI image
+        uses: docker/build-push-action@v6
+        with:
+          context: ui
+          push: true
+          tags: ${{ steps.meta-ui.outputs.tags }}
+          labels: ${{ steps.meta-ui.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build-push
     environment: production
+    timeout-minutes: 20
 
     permissions:
       id-token: write
       contents: write
+
+    outputs:
+      app_url: ${{ steps.infra.outputs.app_url }}
 
     steps:
       - uses: actions/checkout@v4
@@ -75,12 +131,15 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy infrastructure
+        id: infra
         run: |
-          az deployment group create \
+          OUTPUT=$(az deployment group create \
             --name docvault-prod-infra-${{ github.run_id }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --template-file infra/main.bicep \
             --mode Incremental \
+            --output json \
+            --query properties.outputs \
             --parameters \
               appName=${{ vars.API_APP_NAME }} \
               databaseConnectionString="${{ secrets.DATABASE_CONNECTION_STRING }}" \
@@ -91,7 +150,8 @@ jobs:
               adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}" \
               containerImage="ghcr.io/${{ github.repository_owner }}/docvault:${{ needs.build-push.outputs.version }}" \
               ghcrUsername="${{ github.actor }}" \
-              ghcrToken="${{ secrets.GHCR_TOKEN }}"
+              ghcrToken="${{ secrets.GHCR_TOKEN }}")
+          echo "app_url=$(echo "$OUTPUT" | jq -r '.appUrl.value')" >> $GITHUB_OUTPUT
 
       - name: Deploy UI to Static Web App
         uses: Azure/static-web-apps-deploy@v1
@@ -104,14 +164,20 @@ jobs:
           api_location: ''
           output_location: dist
 
-      - name: Print app URLs
+      - name: Health check
         run: |
-          API_URL=$(az webapp show \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ vars.API_APP_NAME }} \
-            --query defaultHostName -o tsv)
-          echo "API deployed to: https://$API_URL"
-          echo "UI deployed to: ${{ vars.CORS_ALLOWED_ORIGINS }}"
+          echo "Waiting for API to be healthy..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              "${{ steps.infra.outputs.app_url }}/health/ready" || true)
+            [ "$STATUS" = "200" ] && { echo "Healthy after $((i * 10))s"; break; }
+            echo "Attempt $i/18 — HTTP $STATUS, retrying in 10s..."
+            sleep 10
+          done
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::API health check failed (last status: $STATUS)"
+            exit 1
+          fi
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -122,3 +188,15 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes \
             --verify-tag
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Production Deployment — ${{ github.ref_name }}"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **API** | ${{ steps.infra.outputs.app_url }} |"
+            echo "| **UI** | ${{ vars.CORS_ALLOWED_ORIGINS }} |"
+            echo "| **Image** | \`ghcr.io/${{ github.repository_owner }}/docvault:${{ needs.build-push.outputs.version }}\` |"
+          } >> $GITHUB_STEP_SUMMARY
