@@ -79,8 +79,18 @@ public static class DependencyInjection
     services.Configure<AuthSettings>(configuration.GetSection(AuthSettings.Section));
     services.AddScoped<ITokenService, JwtTokenService>();
     services.AddScoped<IUserService, IdentityUserService>();
-    services.AddScoped<IEmailService, LogEmailService>();
     services.AddScoped<IdentitySeeder>();
+
+    // Configure token lifetime for email confirmation and password reset (default: 1 day).
+    services.Configure<DataProtectionTokenProviderOptions>(options =>
+      options.TokenLifespan = TimeSpan.FromHours(24));
+
+    var emailSettings = configuration.GetSection(EmailSettings.Section).Get<EmailSettings>() ?? new EmailSettings();
+    services.Configure<EmailSettings>(configuration.GetSection(EmailSettings.Section));
+    if (emailSettings.IsConfigured)
+      services.AddScoped<IEmailService, AzureEmailService>();
+    else
+      services.AddScoped<IEmailService, LogEmailService>();
 
     // Search strategies registered in priority order (first match wins).
     // Hybrid: vector + FTS terms → RRF fusion

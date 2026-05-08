@@ -2,6 +2,7 @@ using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Abstractions.Email;
 using DocVault.Application.Common.Results;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ApplicationErrors = DocVault.Application.Common.Results.Errors;
 
@@ -17,12 +18,18 @@ public sealed class IdentityUserService : IUserService
   private readonly UserManager<ApplicationUser> _users;
   private readonly IEmailService _email;
   private readonly AuthSettings _authSettings;
+  private readonly ILogger<IdentityUserService> _logger;
 
-  public IdentityUserService(UserManager<ApplicationUser> users, IEmailService email, IOptions<AuthSettings> authSettings)
+  public IdentityUserService(
+    UserManager<ApplicationUser> users,
+    IEmailService email,
+    IOptions<AuthSettings> authSettings,
+    ILogger<IdentityUserService> logger)
   {
     _users = users;
     _email = email;
     _authSettings = authSettings.Value;
+    _logger = logger;
   }
 
   public async Task<Result<UserProfile>> RegisterAsync(string email, string password, string? displayName, CancellationToken ct = default)
@@ -32,10 +39,10 @@ public sealed class IdentityUserService : IUserService
 
     var user = new ApplicationUser
     {
-      UserName      = email,
-      Email         = email,
-      DisplayName   = displayName ?? string.Empty,
-      EmailConfirmed = true,
+      UserName       = email,
+      Email          = email,
+      DisplayName    = displayName ?? string.Empty,
+      EmailConfirmed = false,
     };
 
     var result = await _users.CreateAsync(user, password);
@@ -43,6 +50,19 @@ public sealed class IdentityUserService : IUserService
       return Result<UserProfile>.Failure(JoinErrors(result));
 
     await _users.AddToRoleAsync(user, AppRoles.User);
+
+    // Send confirmation email; non-fatal if it fails — user can request a resend.
+    try
+    {
+      var token = await _users.GenerateEmailConfirmationTokenAsync(user);
+      var link  = BuildConfirmationLink(user.Email!, token);
+      await _email.SendEmailConfirmationAsync(user.Email!, link, ct);
+    }
+    catch (Exception ex)
+    {
+      _logger.LogWarning(ex, "Failed to send confirmation email to {Email}; user can request a resend.", user.Email);
+    }
+
     return Result<UserProfile>.Success(await BuildProfileAsync(user));
   }
 
@@ -139,11 +159,46 @@ public sealed class IdentityUserService : IUserService
       : Result.Failure(result.Errors.FirstOrDefault()?.Description ?? "Invalid or expired reset link.");
   }
 
+  public async Task<bool> SendEmailConfirmationAsync(string email, CancellationToken ct = default)
+  {
+    var user = await _users.FindByEmailAsync(email);
+
+    // Return true regardless — never reveal whether the address is registered.
+    if (user is null || user.IsGuest || user.EmailConfirmed)
+      return true;
+
+    var token = await _users.GenerateEmailConfirmationTokenAsync(user);
+    var link  = BuildConfirmationLink(user.Email!, token);
+    await _email.SendEmailConfirmationAsync(user.Email!, link, ct);
+    return true;
+  }
+
+  public async Task<Result> ConfirmEmailAsync(string email, string token, CancellationToken ct = default)
+  {
+    var user = await _users.FindByEmailAsync(email);
+    if (user is null || user.IsGuest)
+      return Result.Failure("Invalid or expired verification link.");
+
+    if (user.EmailConfirmed)
+      return Result.Success();
+
+    var result = await _users.ConfirmEmailAsync(user, token);
+    return result.Succeeded
+      ? Result.Success()
+      : Result.Failure("Invalid or expired verification link.");
+  }
+
   private async Task<UserProfile> BuildProfileAsync(ApplicationUser user)
   {
     var roles = await _users.GetRolesAsync(user);
-    return new UserProfile(user.Id, user.Email!, user.DisplayName, roles.ToList(), user.IsGuest, user.CreatedAt);
+    return new UserProfile(
+      user.Id, user.Email!, user.DisplayName,
+      roles.ToList(), user.IsGuest, user.EmailConfirmed, user.CreatedAt);
   }
+
+  private string BuildConfirmationLink(string email, string token) =>
+    $"{_authSettings.FrontendBaseUrl.TrimEnd('/')}/verify-email" +
+    $"?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}";
 
   private static string JoinErrors(IdentityResult result)
     => string.Join("; ", result.Errors.Select(e => e.Description));

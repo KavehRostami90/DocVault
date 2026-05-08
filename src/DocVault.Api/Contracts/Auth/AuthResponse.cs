@@ -11,4 +11,5 @@ public sealed record UserInfo(
   string DisplayName,
   string Role,
   bool IsGuest,
+  bool IsEmailVerified,
   DateTimeOffset CreatedAt);

@@ -3,16 +3,22 @@ using Microsoft.Extensions.Logging;
 
 namespace DocVault.Infrastructure.Email;
 
-// No SMTP configured — logs the reset link so an admin can relay it to the user.
-// Replace with a real IEmailService implementation (SendGrid, SMTP, etc.) for production.
+// ACS not configured — logs links to console so a developer can relay them manually.
 internal sealed class LogEmailService(ILogger<LogEmailService> logger) : IEmailService
 {
   public Task SendPasswordResetAsync(string toEmail, string resetLink, CancellationToken ct = default)
   {
     logger.LogWarning(
-      "PASSWORD RESET REQUESTED for {Email}. Reset link (share with the user): {ResetLink}",
+      "PASSWORD RESET for {Email} — share this link: {ResetLink}",
       toEmail, resetLink);
+    return Task.CompletedTask;
+  }
 
+  public Task SendEmailConfirmationAsync(string toEmail, string confirmationLink, CancellationToken ct = default)
+  {
+    logger.LogWarning(
+      "EMAIL VERIFICATION for {Email} — share this link: {ConfirmationLink}",
+      toEmail, confirmationLink);
     return Task.CompletedTask;
   }
 }

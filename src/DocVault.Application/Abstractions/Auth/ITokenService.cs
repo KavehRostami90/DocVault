@@ -10,7 +10,7 @@ public interface ITokenService
 {
   Task<TokenPair> CreateTokenPairAsync(
     string userId, string email, string displayName,
-    IReadOnlyList<string> roles, bool isGuest,
+    IReadOnlyList<string> roles, bool isGuest, bool isEmailVerified,
     CancellationToken ct = default);
 
   Task<TokenPair?> RotateRefreshTokenAsync(string oldToken, CancellationToken ct = default);

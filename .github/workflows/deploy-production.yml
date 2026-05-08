@@ -150,7 +150,9 @@ jobs:
               adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}" \
               containerImage="ghcr.io/${{ github.repository_owner }}/docvault:${{ needs.build-push.outputs.version }}" \
               ghcrUsername="${{ github.actor }}" \
-              ghcrToken="${{ secrets.GHCR_TOKEN }}")
+              ghcrToken="${{ secrets.GHCR_TOKEN }}" \
+              emailAcsConnectionString="${{ secrets.EMAIL_ACS_CONNECTION_STRING }}" \
+              emailSenderAddress="${{ vars.EMAIL_SENDER_ADDRESS }}")
           echo "app_url=$(echo "$OUTPUT" | jq -r '.appUrl.value')" >> $GITHUB_OUTPUT
 
       - name: Deploy UI to Static Web App

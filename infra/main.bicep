@@ -40,6 +40,13 @@ param ghcrUsername string
 @secure()
 param ghcrToken string
 
+@description('Azure Communication Services connection string for email delivery. Leave empty to log links to console.')
+@secure()
+param emailAcsConnectionString string = ''
+
+@description('Verified sender address used by ACS (e.g. DoNotReply@<domain>.azurecomm.net).')
+param emailSenderAddress string = ''
+
 // ── App Settings ───────────────────────────────────────────────────────────
 
 var baseAppSettings = [
@@ -61,9 +68,18 @@ var baseAppSettings = [
   { name: 'DOCKER_REGISTRY_SERVER_PASSWORD', value: ghcrToken }
 ]
 
-var allAppSettings = !empty(openAiApiKey)
+var withOpenAi = !empty(openAiApiKey)
   ? concat(baseAppSettings, [{ name: 'OpenAI__ApiKey', value: openAiApiKey }])
   : baseAppSettings
+
+var withEmail = !empty(emailAcsConnectionString)
+  ? concat(withOpenAi, [
+      { name: 'Email__ConnectionString', value: emailAcsConnectionString }
+      { name: 'Email__SenderAddress',    value: emailSenderAddress }
+    ])
+  : withOpenAi
+
+var allAppSettings = withEmail
 
 // ── App Service Plan ───────────────────────────────────────────────────────
 
