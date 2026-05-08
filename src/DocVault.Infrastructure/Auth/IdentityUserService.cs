@@ -69,9 +69,11 @@ public sealed class IdentityUserService : IUserService
   public async Task<Result<UserProfile>> LoginAsync(string email, string password, CancellationToken ct = default)
   {
     var user = await _users.FindByEmailAsync(email);
+    
     if (user is null || !await _users.CheckPasswordAsync(user, password))
       return Result<UserProfile>.Failure("Invalid email or password.");
-
+    if(user.EmailConfirmed == false)
+      return Result<UserProfile>.Failure("Email not verified. Please check your inbox.");
     return Result<UserProfile>.Success(await BuildProfileAsync(user));
   }
 
@@ -179,13 +181,13 @@ public sealed class IdentityUserService : IUserService
     if (user is null || user.IsGuest)
       return Result.Failure("Invalid or expired verification link.");
 
-    if (user.EmailConfirmed)
-      return Result.Success();
-
     var result = await _users.ConfirmEmailAsync(user, token);
-    return result.Succeeded
-      ? Result.Success()
-      : Result.Failure("Invalid or expired verification link.");
+    if (!result.Succeeded)
+      return Result.Failure("Invalid or expired verification link or the email is already confirmed.");
+
+    // Rotate SecurityStamp so the same token cannot be reused.
+    await _users.UpdateSecurityStampAsync(user);
+    return Result.Success();
   }
 
   private async Task<UserProfile> BuildProfileAsync(ApplicationUser user)

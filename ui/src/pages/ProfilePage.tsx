@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { User, Mail, Shield, Calendar, Edit2, Lock, KeyRound, Check, X, HardDrive } from 'lucide-react'
+import { User, Mail, Shield, Calendar, Edit2, Lock, KeyRound, Check, X, HardDrive, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { authApi, getStorageUsage, type StorageUsage } from '../api/auth'
 
@@ -25,6 +25,16 @@ export default function ProfilePage() {
   const [pwError, setPwError] = useState('')
   const [pwSuccess, setPwSuccess] = useState(false)
   const [pwSaving, setPwSaving] = useState(false)
+
+  const [forgotSending, setForgotSending] = useState(false)
+  const [forgotSent, setForgotSent] = useState(false)
+  const [forgotError, setForgotError] = useState('')
+
+  const [showCurrentPw, setShowCurrentPw] = useState(false)
+  const [showNewPw, setShowNewPw] = useState(false)
+  const [showConfirmPw, setShowConfirmPw] = useState(false)
+  const [showResetPw, setShowResetPw] = useState(false)
+  const [showResetConfirmPw, setShowResetConfirmPw] = useState(false)
 
   const [resetPassword, setResetPassword] = useState('')
   const [resetConfirm, setResetConfirm] = useState('')
@@ -113,6 +123,21 @@ export default function ProfilePage() {
       setPwError(e instanceof Error ? e.message : 'Failed to change password.')
     } finally {
       setPwSaving(false)
+    }
+  }
+
+  async function sendForgotPassword() {
+    if (!user) return
+    setForgotError('')
+    setForgotSent(false)
+    setForgotSending(true)
+    try {
+      await authApi.forgotPassword(user.email)
+      setForgotSent(true)
+    } catch (e: unknown) {
+      setForgotError(e instanceof Error ? e.message : 'Failed to send reset email.')
+    } finally {
+      setForgotSending(false)
     }
   }
 
@@ -233,24 +258,36 @@ export default function ProfilePage() {
           <div className="space-y-3">
             <div>
               <label className="text-slate-500 text-xs block mb-1">New password</label>
-              <input
-                type="password"
-                value={resetPassword}
-                onChange={e => setResetPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 transition-colors"
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  type={showResetPw ? 'text' : 'password'}
+                  value={resetPassword}
+                  onChange={e => setResetPassword(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 pr-9 text-white text-sm focus:outline-none focus:border-amber-500 transition-colors"
+                  placeholder="••••••••"
+                />
+                <button type="button" onClick={() => setShowResetPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+                  {showResetPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="text-slate-500 text-xs block mb-1">Confirm new password</label>
-              <input
-                type="password"
-                value={resetConfirm}
-                onChange={e => setResetConfirm(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 transition-colors"
-                placeholder="••••••••"
-                onKeyDown={e => { if (e.key === 'Enter') handleReset() }}
-              />
+              <div className="relative">
+                <input
+                  type={showResetConfirmPw ? 'text' : 'password'}
+                  value={resetConfirm}
+                  onChange={e => setResetConfirm(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 pr-9 text-white text-sm focus:outline-none focus:border-amber-500 transition-colors"
+                  placeholder="••••••••"
+                  onKeyDown={e => { if (e.key === 'Enter') handleReset() }}
+                />
+                <button type="button" onClick={() => setShowResetConfirmPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+                  {showResetConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {resetError && <p className="text-rose-400 text-xs">{resetError}</p>}
@@ -277,34 +314,64 @@ export default function ProfilePage() {
           <div className="space-y-3">
             <div>
               <label className="text-slate-500 text-xs block mb-1">Current password</label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={e => setCurrentPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  type={showCurrentPw ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 pr-9 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="••••••••"
+                />
+                <button type="button" onClick={() => setShowCurrentPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+                  {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={sendForgotPassword}
+                  disabled={forgotSending}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors"
+                >
+                  {forgotSending ? 'Sending…' : 'Forgot your password?'}
+                </button>
+                {forgotSent && <span className="text-emerald-400 text-xs">Reset link sent to your email.</span>}
+                {forgotError && <span className="text-rose-400 text-xs">{forgotError}</span>}
+              </div>
             </div>
             <div>
               <label className="text-slate-500 text-xs block mb-1">New password</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  type={showNewPw ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 pr-9 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="••••••••"
+                />
+                <button type="button" onClick={() => setShowNewPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+                  {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="text-slate-500 text-xs block mb-1">Confirm new password</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                placeholder="••••••••"
-                onKeyDown={e => { if (e.key === 'Enter') savePassword() }}
-              />
+              <div className="relative">
+                <input
+                  type={showConfirmPw ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 pr-9 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                  placeholder="••••••••"
+                  onKeyDown={e => { if (e.key === 'Enter') savePassword() }}
+                />
+                <button type="button" onClick={() => setShowConfirmPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+                  {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {pwError && <p className="text-rose-400 text-xs">{pwError}</p>}
