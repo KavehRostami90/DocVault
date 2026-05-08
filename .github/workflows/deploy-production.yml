@@ -152,7 +152,8 @@ jobs:
               ghcrUsername="${{ github.actor }}" \
               ghcrToken="${{ secrets.GHCR_TOKEN }}" \
               emailAcsConnectionString="${{ secrets.EMAIL_ACS_CONNECTION_STRING }}" \
-              emailSenderAddress="${{ vars.EMAIL_SENDER_ADDRESS }}")
+              emailSenderAddress="${{ vars.EMAIL_SENDER_ADDRESS }}" \
+              frontendBaseUrl="${{ vars.FRONTEND_BASE_URL }}")
           echo "app_url=$(echo "$OUTPUT" | jq -r '.appUrl.value')" >> $GITHUB_OUTPUT
 
       - name: Deploy UI to Static Web App

@@ -19,6 +19,9 @@ param openAiApiKey string = ''
 @description('Comma-separated allowed CORS origins. Must be set to the Static Web App URL in production.')
 param corsAllowedOrigins string = ''
 
+@description('Public UI origin used in email links (e.g. https://yourapp.azurestaticapps.net). Defaults to corsAllowedOrigins when empty.')
+param frontendBaseUrl string = ''
+
 @description('JWT signing key — minimum 32 characters. Must be kept secret.')
 @secure()
 param jwtSigningKey string
@@ -61,7 +64,7 @@ var baseAppSettings = [
   { name: 'Auth__RefreshTokenExpiryDays',   value: '7' }
   { name: 'Auth__AdminEmail',              value: adminEmail }
   { name: 'Auth__AdminPassword',           value: adminPassword }
-  { name: 'Auth__FrontendBaseUrl',         value: corsAllowedOrigins }
+  { name: 'Auth__FrontendBaseUrl',         value: empty(frontendBaseUrl) ? corsAllowedOrigins : frontendBaseUrl }
   { name: 'OpenAI__Model',                 value: 'text-embedding-3-small' }
   { name: 'OpenAI__Dimensions',            value: '768' }
   { name: 'DOCKER_REGISTRY_SERVER_URL',      value: 'https://ghcr.io' }
