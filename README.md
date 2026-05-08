@@ -62,7 +62,7 @@ There are two ways to run DocVault: **Docker** (recommended — no manual instal
 
 ### Path A — Docker (recommended)
 
-Everything runs in containers. You only need Docker Desktop installed on your machine.
+Pull pre-built images from GitHub Container Registry — **no .NET SDK, Node.js, or source checkout required**. You only need Docker Desktop and the files from the `docvault-deployment` folder.
 
 #### Step 1 — Install Docker Desktop
 
@@ -83,93 +83,101 @@ docker compose version  # Docker Compose version v2.x or newer
 
 ---
 
-#### Step 2 — Clone the repository
+#### Step 2 — Get the deployment files
+
+The `docvault-deployment` folder contains everything needed — no full source checkout is required:
 
 ```bash
+# Clone the repo and navigate into the deployment folder
 git clone https://github.com/KavehRostami90/DocVault.git
-cd DocVault
+cd DocVault/docvault-deployment
 ```
+
+Alternatively, download just that folder from GitHub (Code → Download ZIP, then extract `docvault-deployment/`).
 
 ---
 
-#### Step 3 — Create your secrets file
+#### Step 3 — Start the stack
 
-Copy the example environment file and open it in a text editor:
+**Windows (PowerShell)**
+
+The installer checks Docker, creates `.env` from the template, pulls images from GHCR, and starts all services:
+
+```powershell
+.\install.ps1
+```
+
+> On first run the script opens `.env` in Notepad — set your passwords and JWT key, save, then press Enter to continue.
+
+To also run Ollama in a container (embeddings + QA, requires ≈ 4–8 GB extra RAM):
+
+```powershell
+.\install.ps1 -WithOllama
+```
+
+**Linux / macOS (Bash)**
 
 ```bash
+chmod +x install.sh
+./install.sh
+
+# With containerised Ollama:
+./install.sh --with-ollama
+```
+
+**Manual (any platform)**
+
+```bash
+# 1. Copy the environment template
 cp .env.example .env
+
+# 2. Edit .env — fill in the four required values:
+#    DOCVAULT_DB_PASSWORD, DOCVAULT_JWT_KEY,
+#    DOCVAULT_ADMIN_EMAIL, DOCVAULT_ADMIN_PASSWORD
+
+# 3. Pull images and start
+docker compose pull
+docker compose up -d
 ```
 
-Edit `.env` and replace the placeholder values:
+The first pull fetches ≈ 1 GB of images (PostgreSQL + API + UI). Subsequent starts are seconds.
 
-```env
-# Choose any password for the database
-DOCVAULT_DB_PASSWORD=my-secure-db-password
-
-# A random string of at least 32 characters — used to sign JWT tokens
-# Generate one: openssl rand -base64 32
-DOCVAULT_JWT_KEY=replace-this-with-a-long-random-secret-string!!
-
-# The admin account that is seeded automatically on first startup
-DOCVAULT_ADMIN_EMAIL=admin@example.com
-DOCVAULT_ADMIN_PASSWORD=my-admin-password
-```
-
-> The rest of the values in `.env.example` have working defaults for local development and do not need to be changed to get started. `.env` is gitignored — it will never be committed.
-
----
-
-#### Step 4 — Start the stack
+Wait until the API is healthy:
 
 ```bash
-docker compose up --build
-```
-
-Docker will:
-1. Pull the PostgreSQL 16 image (with pgvector)
-2. Build the .NET API image (installs Tesseract OCR inside the container)
-3. Build the React UI image (runs `npm ci && npm run build`, served by nginx)
-4. Apply EF Core database migrations automatically on first run
-5. Seed the admin account from your `.env` values
-
-First build takes **3–5 minutes** (downloading base images + compiling). Subsequent starts are seconds.
-
-Wait until you see a line like:
-
-```
-api  | [INF] Now listening on: http://[::]:8080
+curl http://localhost:8080/health/ready   # {"status":"Healthy"}
 ```
 
 ---
 
-#### Step 5 — Open the app
+#### Step 4 — Open the app
 
 | What | URL |
 |---|---|
 | **UI** (main app) | http://localhost:3000 |
-| **API** | http://localhost:8081 |
-| **Scalar API docs** | http://localhost:8081/scalar/v1 |
-| **Swagger UI** | http://localhost:8081/swagger |
+| **API** | http://localhost:8080 |
+| **Scalar API docs** | http://localhost:8080/scalar/v1 |
+| **Swagger UI** | http://localhost:8080/swagger |
 
 Sign in with the `DOCVAULT_ADMIN_EMAIL` and `DOCVAULT_ADMIN_PASSWORD` you set in `.env`.
 
 ---
 
-#### Step 6 (optional) — Enable AI features
+#### Step 5 (optional) — Enable AI features
 
-Without Ollama, DocVault still works fully — search uses PostgreSQL full-text and question answering returns extractive answers from your documents. To unlock **semantic search** and **LLM-powered question answering**, install Ollama on your host machine:
+Without an embedding provider, DocVault still works — search uses PostgreSQL full-text and question answering returns extractive answers. To unlock **semantic search** and **LLM-powered question answering**, choose one of the options below and configure `.env` accordingly.
 
-**Install Ollama:** https://ollama.com/download
+**Option A — Ollama on your host (recommended for getting started)**
 
-Then pull the required models and start the server:
+Install Ollama from https://ollama.com/download, then pull the models:
 
 ```bash
-ollama pull nomic-embed-text   # embedding model (~270 MB)
-ollama pull llama3.1           # chat model for QA (~4.7 GB, or use llama3.2 ~2 GB)
+ollama pull nomic-embed-text   # embedding model (≈ 270 MB)
+ollama pull llama3.1           # QA / chat model (≈ 4.7 GB; use llama3.2 for ≈ 2 GB)
 ollama serve                   # starts on http://localhost:11434
 ```
 
-Restart the Docker stack — the API detects Ollama automatically via `host.docker.internal:11434`:
+The `.env` defaults already point to `host.docker.internal:11434` — no changes needed. Restart the API to pick up the connection:
 
 ```bash
 docker compose restart api
@@ -177,12 +185,63 @@ docker compose restart api
 
 > **No GPU required.** Ollama runs on CPU. A GPU speeds things up but is entirely optional.
 
+**Option B — Ollama inside Docker**
+
+```bash
+# Windows
+.\install.ps1 -WithOllama
+
+# Linux / macOS
+./install.sh --with-ollama
+
+# Manual
+docker compose --profile ollama run --rm ollama-init   # pull model once
+docker compose --profile ollama up -d
+```
+
+Then update `.env`:
+
+```env
+DOCVAULT_OPENAI_BASE_URL=http://ollama:11434/v1
+```
+
+**Option C — OpenAI API**
+
+```env
+DOCVAULT_OPENAI_BASE_URL=https://api.openai.com/v1
+DOCVAULT_OPENAI_API_KEY=sk-...
+DOCVAULT_OPENAI_MODEL=text-embedding-3-small
+DOCVAULT_OPENAI_DIMENSIONS=1536
+```
+
+---
+
+#### Updating
+
+```bash
+# Windows
+.\install.ps1 -Update
+
+# Linux / macOS
+./install.sh --update
+
+# Manual
+docker compose pull
+docker compose up -d
+```
+
 ---
 
 #### Stopping and cleaning up
 
 ```bash
-# Stop containers but keep your database data
+# Windows
+.\install.ps1 -Down
+
+# Linux / macOS
+./install.sh --down
+
+# Manual — stop containers, keep data volumes
 docker compose down
 
 # Stop containers AND delete all data (wipes the database)
@@ -426,7 +485,7 @@ dotnet ef database update \
 | Problem | Likely cause | Fix |
 |---|---|---|
 | `docker compose` not found | Old Docker installation uses `docker-compose` (v1) | Upgrade to Docker Desktop 4.x which bundles Compose v2 |
-| Port 3000 or 8081 already in use | Another process is using the port | `docker compose down` first, or change the port mapping in `docker-compose.yml` |
+| Port 3000 or 8080 already in use | Another process is using the port | `docker compose down` first, or change `DOCVAULT_UI_PORT` / `DOCVAULT_API_PORT` in `.env` |
 | `pgvector` extension not found | PostgreSQL installed without pgvector | Use the `pgvector/pgvector:pg16` Docker image, or follow the pgvector install guide |
 | Tesseract not found on Windows | Install path not in `PATH` | Add `C:\Program Files\Tesseract-OCR` to your system `PATH` environment variable |
 | Ollama not detected | API can't reach `localhost:11434` | Run `ollama serve` and check http://localhost:11434 is accessible; Docker path uses `host.docker.internal` |
