@@ -61,6 +61,7 @@ var baseAppSettings = [
   { name: 'Auth__RefreshTokenExpiryDays',   value: '7' }
   { name: 'Auth__AdminEmail',              value: adminEmail }
   { name: 'Auth__AdminPassword',           value: adminPassword }
+  { name: 'Auth__FrontendBaseUrl',         value: corsAllowedOrigins }
   { name: 'OpenAI__Model',                 value: 'text-embedding-3-small' }
   { name: 'OpenAI__Dimensions',            value: '768' }
   { name: 'DOCKER_REGISTRY_SERVER_URL',      value: 'https://ghcr.io' }
