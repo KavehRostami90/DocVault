@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../contexts/AuthContext'
+import { authApi } from '../api/auth'
 
 export default function RegisterPage() {
-  const { register } = useAuth()
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -19,8 +18,8 @@ export default function RegisterPage() {
     setError('')
     setLoading(true)
     try {
-      await register(email, password, displayName)
-      navigate('/documents', { replace: true })
+      await authApi.register(email, password, displayName)
+      navigate('/login', { state: { registrationSent: true, email }, replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed.')
     } finally {
