@@ -22,7 +22,7 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       await authApi.register(email, password, displayName)
-      navigate('/verify-email', { state: { registrationSent: true, email }, replace: true })
+      navigate('/login', { state: { registrationSent: true, email }, replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed.')
     } finally {
