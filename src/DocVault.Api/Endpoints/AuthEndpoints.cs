@@ -29,7 +29,7 @@ public static class AuthEndpoints
         return Results.Conflict(new { error = result.Error });
 
       var profile = result.Value!;
-      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: false, ct);
+      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: false, isEmailVerified: profile.IsEmailVerified, ct);
       SetRefreshCookie(http, pair);
       return Results.Ok(BuildResponse(profile, pair));
     })
@@ -52,7 +52,7 @@ public static class AuthEndpoints
         return Results.Problem(detail: result.Error, statusCode: StatusCodes.Status401Unauthorized);
 
       var profile = result.Value!;
-      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, profile.IsGuest, ct);
+      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, profile.IsGuest, profile.IsEmailVerified, ct);
       SetRefreshCookie(http, pair);
       return Results.Ok(BuildResponse(profile, pair));
     })
@@ -74,7 +74,8 @@ public static class AuthEndpoints
         return Results.Problem("Failed to create guest session.", statusCode: StatusCodes.Status500InternalServerError);
 
       var profile = result.Value!;
-      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: true, ct);
+      // Guests are ephemeral — no email to verify.
+      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: true, isEmailVerified: true, ct);
       SetRefreshCookie(http, pair);
       return Results.Ok(BuildResponse(profile, pair));
     })
@@ -232,6 +233,36 @@ public static class AuthEndpoints
     .Produces(StatusCodes.Status400BadRequest)
     .WithSummary("Reset a password using the token from the forgot-password email");
 
+    group.MapPost("/verify-email", async (
+      VerifyEmailRequest request,
+      IUserService userService,
+      CancellationToken ct) =>
+    {
+      var result = await userService.ConfirmEmailAsync(request.Email, request.Token, ct);
+      return result.IsSuccess ? Results.NoContent() : Results.Problem(
+        detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<VerifyEmailRequest>())
+    .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status400BadRequest)
+    .WithSummary("Confirm email address using the token from the verification email");
+
+    group.MapPost("/resend-verification", async (
+      ResendVerificationRequest request,
+      IUserService userService,
+      CancellationToken ct) =>
+    {
+      // Always return the same response — never reveal whether the address is registered.
+      await userService.SendEmailConfirmationAsync(request.Email, ct);
+      return Results.Ok(new { message = "If that email is registered and unverified, a new confirmation link has been sent." });
+    })
+    .AddEndpointFilterFactory(ValidationFilter.Create<ResendVerificationRequest>())
+    .AllowAnonymous()
+    .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
+    .WithSummary("Resend the email verification link");
+
     return routes;
   }
 
@@ -256,6 +287,6 @@ public static class AuthEndpoints
     var primaryRole = profile.Roles.Contains("Admin") ? "Admin"
                     : profile.Roles.Contains("Guest") ? "Guest"
                     : "User";
-    return new UserInfo(profile.Id, profile.Email, profile.DisplayName, primaryRole, profile.IsGuest, profile.CreatedAt);
+    return new UserInfo(profile.Id, profile.Email, profile.DisplayName, primaryRole, profile.IsGuest, profile.IsEmailVerified, profile.CreatedAt);
   }
 }

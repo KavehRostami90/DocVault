@@ -25,10 +25,10 @@ public sealed class JwtTokenService : ITokenService
 
   public async Task<TokenPair> CreateTokenPairAsync(
     string userId, string email, string displayName,
-    IReadOnlyList<string> roles, bool isGuest,
+    IReadOnlyList<string> roles, bool isGuest, bool isEmailVerified,
     CancellationToken ct = default)
   {
-    var accessToken = BuildAccessToken(userId, email, displayName, roles, isGuest);
+    var accessToken = BuildAccessToken(userId, email, displayName, roles, isGuest, isEmailVerified);
     var refreshExpiry = isGuest
       ? DateTimeOffset.UtcNow.AddHours(24)
       : DateTimeOffset.UtcNow.AddDays(_settings.RefreshTokenExpiryDays);
@@ -59,7 +59,7 @@ public sealed class JwtTokenService : ITokenService
       return null;
 
     var roles = (IReadOnlyList<string>)await _users.GetRolesAsync(user);
-    return await CreateTokenPairAsync(user.Id, user.Email!, user.DisplayName, roles, user.IsGuest, ct);
+    return await CreateTokenPairAsync(user.Id, user.Email!, user.DisplayName, roles, user.IsGuest, user.EmailConfirmed, ct);
   }
 
   public async Task RevokeRefreshTokenAsync(string token, CancellationToken ct = default)
@@ -72,7 +72,7 @@ public sealed class JwtTokenService : ITokenService
     }
   }
 
-  private string BuildAccessToken(string userId, string email, string displayName, IReadOnlyList<string> roles, bool isGuest)
+  private string BuildAccessToken(string userId, string email, string displayName, IReadOnlyList<string> roles, bool isGuest, bool isEmailVerified)
   {
     var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.JwtSigningKey));
     var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -83,6 +83,7 @@ public sealed class JwtTokenService : ITokenService
       new(JwtRegisteredClaimNames.Email, email),
       new("displayName", displayName),
       new("isGuest", isGuest.ToString().ToLowerInvariant()),
+      new("emailVerified", isEmailVerified.ToString().ToLowerInvariant()),
     };
 
     foreach (var role in roles)

@@ -8,6 +8,7 @@ export interface UserInfo {
   displayName: string
   role: 'Admin' | 'User' | 'Guest'
   isGuest: boolean
+  isEmailVerified: boolean
   createdAt: string
 }
 
@@ -96,6 +97,18 @@ export const authApi = {
     call<void>('/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify({ email, token, newPassword }),
+    }),
+
+  verifyEmail: (email: string, token: string) =>
+    call<void>('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ email, token }),
+    }),
+
+  resendVerification: (email: string) =>
+    call<{ message: string }>('/auth/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     }),
 }
 

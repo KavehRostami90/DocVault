@@ -12,6 +12,7 @@ public sealed record UserProfile(
   string DisplayName,
   IReadOnlyList<string> Roles,
   bool IsGuest,
+  bool IsEmailVerified,
   DateTimeOffset CreatedAt);
 
 /// <summary>
@@ -29,4 +30,6 @@ public interface IUserService
   Task<Result> AdminResetPasswordAsync(string userId, string newPassword, CancellationToken ct = default);
   Task<bool> SendPasswordResetEmailAsync(string email, CancellationToken ct = default);
   Task<Result> ResetPasswordAsync(string email, string token, string newPassword, CancellationToken ct = default);
+  Task<bool> SendEmailConfirmationAsync(string email, CancellationToken ct = default);
+  Task<Result> ConfirmEmailAsync(string email, string token, CancellationToken ct = default);
 }

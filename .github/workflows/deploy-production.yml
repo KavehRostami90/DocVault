@@ -54,8 +54,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
   build-push-ui:
     name: Build & Push UI Image
@@ -101,8 +101,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-ui.outputs.tags }}
           labels: ${{ steps.meta-ui.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ui
+          cache-to: type=gha,mode=max,scope=ui
 
   deploy:
     name: Deploy to Production
@@ -150,7 +150,10 @@ jobs:
               adminPassword="${{ secrets.AUTH_ADMIN_PASSWORD }}" \
               containerImage="ghcr.io/${{ github.repository_owner }}/docvault:${{ needs.build-push.outputs.version }}" \
               ghcrUsername="${{ github.actor }}" \
-              ghcrToken="${{ secrets.GHCR_TOKEN }}")
+              ghcrToken="${{ secrets.GHCR_TOKEN }}" \
+              emailAcsConnectionString="${{ secrets.EMAIL_ACS_CONNECTION_STRING }}" \
+              emailSenderAddress="${{ vars.EMAIL_SENDER_ADDRESS }}" \
+              frontendBaseUrl="${{ vars.FRONTEND_BASE_URL }}")
           echo "app_url=$(echo "$OUTPUT" | jq -r '.appUrl.value')" >> $GITHUB_OUTPUT
 
       - name: Deploy UI to Static Web App
