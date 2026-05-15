@@ -1,4 +1,3 @@
-using DocVault.IntegrationTests.Infrastructure;
 using Xunit;
 
 namespace DocVault.IntegrationTests.Api.Search;

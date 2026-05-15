@@ -1,9 +1,5 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using DocVault.Infrastructure.Auth;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace DocVault.IntegrationTests.Infrastructure;
 
