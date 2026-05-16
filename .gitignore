@@ -9,6 +9,7 @@ obj/
 *.suo
 *.DS_Store
 *.swp
+*.lscache
 
 # Test results & coverage
 TestResults/
