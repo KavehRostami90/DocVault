@@ -69,11 +69,24 @@ public sealed class IdentityUserService : IUserService
   public async Task<Result<UserProfile>> LoginAsync(string email, string password, CancellationToken ct = default)
   {
     var user = await _users.FindByEmailAsync(email);
-    
-    if (user is null || !await _users.CheckPasswordAsync(user, password))
+
+    if (user is null)
       return Result<UserProfile>.Failure("Invalid email or password.");
-    if(user.EmailConfirmed == false)
+
+    if (await _users.IsLockedOutAsync(user))
+      return Result<UserProfile>.Failure("Account locked due to too many failed attempts. Please try again later.");
+
+    if (!await _users.CheckPasswordAsync(user, password))
+    {
+      await _users.AccessFailedAsync(user);
+      return Result<UserProfile>.Failure("Invalid email or password.");
+    }
+
+    await _users.ResetAccessFailedCountAsync(user);
+
+    if (!user.EmailConfirmed)
       return Result<UserProfile>.Failure("Email not verified. Please check your inbox.");
+
     return Result<UserProfile>.Success(await BuildProfileAsync(user));
   }
 

@@ -20,25 +20,21 @@ public static class AuthEndpoints
     group.MapPost("/register", async (
       RegisterRequest request,
       IUserService userService,
-      ITokenService tokens,
-      HttpContext http,
       CancellationToken ct) =>
     {
       var result = await userService.RegisterAsync(request.Email, request.Password, request.DisplayName, ct);
       if (!result.IsSuccess)
         return Results.Conflict(new { error = result.Error });
 
-      var profile = result.Value!;
-      var pair = await tokens.CreateTokenPairAsync(profile.Id, profile.Email, profile.DisplayName, profile.Roles, isGuest: false, isEmailVerified: profile.IsEmailVerified, ct);
-      SetRefreshCookie(http, pair);
-      return Results.Ok(BuildResponse(profile, pair));
+      // No tokens until the email is verified — the user signs in after confirming.
+      return Results.Ok(new { message = "Account created. Check your inbox to verify your email, then sign in." });
     })
     .AddEndpointFilterFactory(ValidationFilter.Create<RegisterRequest>())
     .AllowAnonymous()
     .RequireRateLimiting(RateLimitPolicies.AuthEndpoints)
-    .Produces<AuthResponse>()
+    .Produces(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status409Conflict)
-    .WithSummary("Register a new user account");
+    .WithSummary("Register a new user account (sign in after verifying the email)");
 
     group.MapPost("/login", async (
       LoginRequest request,

@@ -9,7 +9,6 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, displayName: string) => Promise<void>
   loginAsGuest: () => Promise<void>
   logout: () => Promise<void>
   getToken: () => string | null
@@ -96,11 +95,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuth(res.user, res.accessToken, res.expiresIn)
   }, [setAuth])
 
-  const register = useCallback(async (email: string, password: string, displayName: string) => {
-    const res = await authApi.register(email, password, displayName)
-    setAuth(res.user, res.accessToken, res.expiresIn)
-  }, [setAuth])
-
   const loginAsGuest = useCallback(async () => {
     const res = await authApi.guest()
     setAuth(res.user, res.accessToken, res.expiresIn)
@@ -132,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [state.accessToken])
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, loginAsGuest, logout, getToken, updateProfile }}>
+    <AuthContext.Provider value={{ ...state, login, loginAsGuest, logout, getToken, updateProfile }}>
       {children}
     </AuthContext.Provider>
   )
