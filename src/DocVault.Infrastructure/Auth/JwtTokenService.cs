@@ -53,6 +53,7 @@ public sealed class JwtTokenService : ITokenService
       return null;
 
     stored.RevokedAt = DateTimeOffset.UtcNow;
+    await _db.SaveChangesAsync(ct);
 
     var user = await _users.FindByIdAsync(stored.UserId);
     // Unverified accounts cannot keep a session alive via refresh — they must
