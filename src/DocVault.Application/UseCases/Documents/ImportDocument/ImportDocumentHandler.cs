@@ -4,6 +4,7 @@ using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Background.Queue;
 using DocVault.Application.Common.Results;
+using DocVault.Application.Common.Streams;
 using DocVault.Domain.Documents;
 using DocVault.Domain.Documents.ValueObjects;
 using DocVault.Domain.Imports;
@@ -34,16 +35,14 @@ public sealed class ImportDocumentHandler : ICommandHandler<ImportDocumentComman
 
   public async Task<Result<DocumentId>> HandleAsync(ImportDocumentCommand command, CancellationToken cancellationToken = default)
   {
-    var documentId = DocumentId.New();
-
-    using var buffer = new MemoryStream();
-    await command.Content.CopyToAsync(buffer, cancellationToken);
-
-    var hash        = ComputeHash(buffer);
+    var documentId  = DocumentId.New();
     var storagePath = $"{documentId.Value}.bin";
 
-    buffer.Position = 0;
-    await _storage.WriteAsync(storagePath, buffer, cancellationToken);
+    // Hash while streaming to storage — one pass, no full in-memory buffering.
+    using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+    await using var content = new HashingReadStream(command.Content, hasher);
+    await _storage.WriteAsync(storagePath, content, cancellationToken);
+    var hash = FileHash.FromBytes(hasher.GetHashAndReset());
 
     var tags     = command.Tags.Select(t => new Tag(Guid.NewGuid(), t));
     var document = new Document(documentId, command.Title, command.FileName, command.ContentType, command.Size, hash, command.OwnerId);
@@ -61,11 +60,5 @@ public sealed class ImportDocumentHandler : ICommandHandler<ImportDocumentComman
     }, cancellationToken);
 
     return Result<DocumentId>.Success(documentId);
-  }
-
-  private static FileHash ComputeHash(MemoryStream buffer)
-  {
-    var hashBytes = SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length));
-    return FileHash.FromBytes(hashBytes);
   }
 }

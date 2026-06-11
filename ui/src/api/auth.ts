@@ -36,7 +36,7 @@ async function call<T>(path: string, init: RequestInit): Promise<T> {
 
 export const authApi = {
   register: (email: string, password: string, displayName: string) =>
-    call<AuthResponse>('/auth/register', {
+    call<{ message: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password, displayName }),
     }),

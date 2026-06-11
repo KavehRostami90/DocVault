@@ -55,7 +55,9 @@ public sealed class JwtTokenService : ITokenService
     stored.RevokedAt = DateTimeOffset.UtcNow;
 
     var user = await _users.FindByIdAsync(stored.UserId);
-    if (user is null)
+    // Unverified accounts cannot keep a session alive via refresh — they must
+    // verify and log in again (guests always have EmailConfirmed = true).
+    if (user is null || !user.EmailConfirmed)
       return null;
 
     var roles = (IReadOnlyList<string>)await _users.GetRolesAsync(user);
