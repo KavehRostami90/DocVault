@@ -75,7 +75,7 @@ public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentC
 
   private static bool HasValidMagicBytes(IFormFile file)
   {
-    Span<byte> header = stackalloc byte[8];
+    Span<byte> header = stackalloc byte[FileSignatures.RequiredHeaderBytes];
     using var stream = file.OpenReadStream();
     var bytesRead = stream.Read(header);
     return FileSignatures.Matches(file.ContentType, header[..bytesRead]);
