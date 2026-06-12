@@ -5,6 +5,7 @@ using DocVault.Api.Mappers;
 using DocVault.Api.Middleware;
 using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Abstractions.Realtime;
+using DocVault.Application.Abstractions.Security;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
@@ -109,12 +110,20 @@ public static class DocumentsEndpoints
     group.MapPost("/", async (
       DocumentCreateRequest request,
       ImportDocumentHandler handler,
+      IVirusScanner virusScanner,
       ICurrentUser currentUser,
       CancellationToken ct) =>
     {
       var file = request.File;
       if (file is null)
         return Results.Problem(detail: "No file was uploaded.", statusCode: StatusCodes.Status400BadRequest);
+
+      await using var scanStream = file.OpenReadStream();
+      var scan = await virusScanner.ScanAsync(scanStream, ct);
+      if (!scan.IsClean)
+        return Results.Problem(
+          detail: $"File was rejected by the virus scanner: {scan.ThreatName}",
+          statusCode: StatusCodes.Status422UnprocessableEntity);
 
       await using var stream = file.OpenReadStream();
 

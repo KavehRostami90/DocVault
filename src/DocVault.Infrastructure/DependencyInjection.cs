@@ -6,6 +6,7 @@ using DocVault.Application.Abstractions.Messaging;
 using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Abstractions.Qa;
 using DocVault.Application.Abstractions.Realtime;
+using DocVault.Application.Abstractions.Security;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.Abstractions.Text;
 using DocVault.Application.Abstractions.Users;
@@ -22,6 +23,7 @@ using DocVault.Infrastructure.Persistence.Repositories;
 using DocVault.Infrastructure.Qa;
 using DocVault.Infrastructure.Queue;
 using DocVault.Infrastructure.Realtime;
+using DocVault.Infrastructure.Security;
 using DocVault.Infrastructure.Storage;
 using DocVault.Infrastructure.Text;
 using Microsoft.AspNetCore.Identity;
@@ -131,6 +133,17 @@ public static class DependencyInjection
             Path.Combine(AppContext.BaseDirectory, "storage"));
         return new LocalFileStorage(Path.Combine(AppContext.BaseDirectory, "storage"));
       });
+    }
+
+    var clamAvHost = configuration[$"{ClamAvOptions.Section}:{nameof(ClamAvOptions.Host)}"];
+    if (!string.IsNullOrWhiteSpace(clamAvHost))
+    {
+      services.Configure<ClamAvOptions>(configuration.GetSection(ClamAvOptions.Section));
+      services.AddSingleton<IVirusScanner, ClamAvScanner>();
+    }
+    else
+    {
+      services.AddSingleton<IVirusScanner, NoOpVirusScanner>();
     }
 
     services.AddSingleton<ITextChunker, SimpleTextChunker>();
