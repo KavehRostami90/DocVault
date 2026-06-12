@@ -3,6 +3,7 @@ using DocVault.Api.Contracts.Documents;
 using DocVault.Api.Composition;
 using DocVault.Domain.Common;
 using FluentValidation;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
 namespace DocVault.Api.Validation;
@@ -36,6 +37,10 @@ public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentC
         .WithMessage("File name cannot be only whitespace.")
         .Must(fileName => !fileName.Contains("..") && !fileName.Contains("/") && !fileName.Contains("\\"))
         .WithMessage("File name contains invalid characters.");
+
+      RuleFor(x => x.File!)
+        .Must(HasValidMagicBytes)
+        .WithMessage("File content does not match the declared content type.");
     });
 
     RuleFor(x => x.Title)
@@ -66,6 +71,14 @@ public sealed class DocumentCreateRequestValidator : AbstractValidator<DocumentC
     RuleFor(x => x.Tags)
       .Must(tags => tags.Distinct(StringComparer.OrdinalIgnoreCase).Count() == tags.Count)
       .WithMessage("Tags cannot contain duplicates.");
+  }
+
+  private static bool HasValidMagicBytes(IFormFile file)
+  {
+    Span<byte> header = stackalloc byte[FileSignatures.RequiredHeaderBytes];
+    using var stream = file.OpenReadStream();
+    var bytesRead = stream.Read(header);
+    return FileSignatures.Matches(file.ContentType, header[..bytesRead]);
   }
 
   private static string FormatFileSize(long bytes)

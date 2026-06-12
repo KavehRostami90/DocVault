@@ -28,6 +28,7 @@ services:
       OpenAI__Model: ${DOCVAULT_OPENAI_MODEL}
       OpenAI__Dimensions: ${DOCVAULT_OPENAI_DIMENSIONS}
       QA__Model: ${DOCVAULT_QA_MODEL:-llama3.1}
+      ClamAv__Host: ${DOCVAULT_CLAMAV_HOST:-}
     extra_hosts:
       # Lets the container resolve host.docker.internal on Linux (no-op on Docker Desktop).
       - "host.docker.internal:host-gateway"
@@ -37,6 +38,9 @@ services:
       # When the azurite profile is active, wait for it to be healthy before starting.
       # required: false means this dependency is silently ignored when azurite is not in the active profiles.
       azurite:
+        condition: service_healthy
+        required: false
+      clamav:
         condition: service_healthy
         required: false
     ports:
@@ -102,6 +106,30 @@ services:
     mem_limit: 128m
     cpus: 0.25
 
+  # ── ClamAV (antivirus scanning for uploaded files) ────────────────────────
+  # Only started when the "clamav" profile is active:
+  #   docker compose --profile clamav up
+  # Set DOCVAULT_CLAMAV_HOST=clamav in .env to enable scanning in the API.
+  # Leave DOCVAULT_CLAMAV_HOST empty (the default) to skip scanning (dev mode).
+  clamav:
+    image: clamav/clamav:stable
+    profiles: [clamav]
+    restart: unless-stopped
+    ports:
+      - "3310:3310"
+    volumes:
+      - clamav-data:/var/lib/clamav
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck || clamdscan --ping 3 || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
+    mem_limit: 1g
+    cpus: 0.5
+
   # ── Ollama (local embedding / LLM inference) ───────────────────────────────
   # Only started when the "ollama" profile is active:
   #   docker compose --profile ollama up
@@ -155,6 +183,8 @@ volumes:
   app-storage:
     driver: local
   azurite-data:
+    driver: local
+  clamav-data:
     driver: local
   ollama-data:
     driver: local
