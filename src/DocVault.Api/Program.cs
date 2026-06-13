@@ -24,7 +24,7 @@ try
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services));
 
-  builder.Services.AddApiOptions(builder.Configuration);
+  builder.Services.AddApiOptions(builder.Configuration, builder.Environment);
   builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = uploadOptions.MaxFileSizeBytes);
   builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = uploadOptions.MaxFileSizeBytes);
   builder.Services.AddDocVault(builder.Configuration);
