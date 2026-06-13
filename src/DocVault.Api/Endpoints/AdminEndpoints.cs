@@ -1,12 +1,13 @@
 using DocVault.Api.Composition;
 using DocVault.Api.Contracts.Admin;
 using DocVault.Api.Contracts.Common;
-using DocVault.Api.Validation;
 using DocVault.Api.Contracts.Documents;
+using DocVault.Api.Validation;
 using DocVault.Api.Mappers;
 using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Abstractions.Storage;
 using DocVault.Application.UseCases.Admin;
+using DocVault.Application.UseCases.Admin.DeadLetterQueue;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocumentFile;
 using DocVault.Application.UseCases.Documents.ListDocuments;
@@ -281,6 +282,69 @@ public static class AdminEndpoints
     .Produces(StatusCodes.Status204NoContent)
     .Produces(StatusCodes.Status404NotFound)
     .WithSummary("Admin: assign roles to a user");
+
+    // ── Dead-Letter Queue ─────────────────────────────────────────────────────
+
+    group.MapGet("/dead-letter-queue", async (
+      [AsParameters] DeadLetterPageRequest request,
+      GetDeadLetterQueueHandler handler,
+      CancellationToken ct) =>
+    {
+      var result = await handler.HandleAsync(
+        new GetDeadLetterQueueQuery(request.Page, request.Size), ct);
+      var data = result.Value!;
+      return Results.Ok(new
+      {
+        items = data.Items,
+        total = data.Total,
+        page  = request.Page,
+        size  = request.Size,
+      });
+    })
+    .Produces(StatusCodes.Status200OK)
+    .WithSummary("Admin: list dead-letter queue entries");
+
+    group.MapPost("/dead-letter-queue/{id:guid}/retry", async (
+      Guid id,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      RetryDeadLetterJobHandler handler,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      var result = await handler.HandleAsync(new RetryDeadLetterJobCommand(id), ct);
+
+      if (result.IsSuccess)
+        logger.LogInformation("Admin {CallerId} triggered immediate retry for dead-letter entry {EntryId}", caller.UserId, id);
+
+      return result.IsSuccess
+        ? Results.Accepted()
+        : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status404NotFound);
+    })
+    .Produces(StatusCodes.Status202Accepted)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Admin: immediately re-queue a dead-letter job for retry");
+
+    group.MapDelete("/dead-letter-queue/{id:guid}", async (
+      Guid id,
+      ICurrentUser caller,
+      ILoggerFactory loggerFactory,
+      DiscardDeadLetterJobHandler handler,
+      CancellationToken ct) =>
+    {
+      var logger = loggerFactory.CreateLogger(AuditLoggerName);
+      var result = await handler.HandleAsync(new DiscardDeadLetterJobCommand(id), ct);
+
+      if (result.IsSuccess)
+        logger.LogWarning("Admin {CallerId} discarded dead-letter entry {EntryId}", caller.UserId, id);
+
+      return result.IsSuccess
+        ? Results.NoContent()
+        : Results.Problem(detail: result.Error, statusCode: StatusCodes.Status404NotFound);
+    })
+    .Produces(StatusCodes.Status204NoContent)
+    .Produces(StatusCodes.Status404NotFound)
+    .WithSummary("Admin: permanently discard a dead-letter job (marks document as Failed)");
 
     // ── Stats ─────────────────────────────────────────────────────────────────
 

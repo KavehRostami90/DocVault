@@ -108,6 +108,7 @@ public static class DependencyInjection
     services.AddScoped<IDocumentChunkRepository, EfDocumentChunkRepository>();
     services.AddScoped<ITagRepository, EfTagRepository>();
     services.AddScoped<IImportJobRepository, EfImportJobRepository>();
+    services.AddScoped<IFailedIndexingJobRepository, EfFailedIndexingJobRepository>();
     services.AddScoped<IUnitOfWork, EfUnitOfWork>();
     services.AddScoped<IUserQueryService, EfUserQueryService>();
 
