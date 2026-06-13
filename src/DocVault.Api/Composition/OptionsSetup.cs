@@ -21,24 +21,31 @@ public static class OptionsSetup
     // ── Auth ──────────────────────────────────────────────────────────────────
     // JwtSigningKey must be present and long enough for HMAC-SHA256 (≥ 256 bits = 32 ASCII chars).
     // AdminEmail / AdminPassword are required for the identity seeder that runs on first startup.
-    services.AddOptions<AuthSettings>()
-      .Bind(configuration.GetSection(AuthSettings.Section))
-      .Validate(
-        o => !string.IsNullOrWhiteSpace(o.JwtSigningKey),
-        "Auth:JwtSigningKey is required. Set the DOCVAULT_JWT_KEY environment variable.")
-      .Validate(
-        o => string.IsNullOrWhiteSpace(o.JwtSigningKey) || o.JwtSigningKey.Length >= 32,
-        "Auth:JwtSigningKey must be at least 32 characters (256 bits) for HMAC-SHA256.")
-      .Validate(
-        o => !string.IsNullOrWhiteSpace(o.AdminEmail),
-        "Auth:AdminEmail is required. Set the DOCVAULT_ADMIN_EMAIL environment variable.")
-      .Validate(
-        o => !string.IsNullOrWhiteSpace(o.AdminPassword),
-        "Auth:AdminPassword is required. Set the DOCVAULT_ADMIN_PASSWORD environment variable.")
-      .Validate(
-        o => string.IsNullOrWhiteSpace(o.AdminPassword) || o.AdminPassword.Length >= 8,
-        "Auth:AdminPassword must be at least 8 characters.")
-      .ValidateOnStart();
+    // In the Testing environment these secrets are never supplied because authentication is
+    // replaced by TestAuthHandler; skip validation there to keep CreateClient() from throwing.
+    var authOptions = services.AddOptions<AuthSettings>()
+      .Bind(configuration.GetSection(AuthSettings.Section));
+
+    if (!environment.IsEnvironment("Testing"))
+    {
+      authOptions
+        .Validate(
+          o => !string.IsNullOrWhiteSpace(o.JwtSigningKey),
+          "Auth:JwtSigningKey is required. Set the DOCVAULT_JWT_KEY environment variable.")
+        .Validate(
+          o => string.IsNullOrWhiteSpace(o.JwtSigningKey) || o.JwtSigningKey.Length >= 32,
+          "Auth:JwtSigningKey must be at least 32 characters (256 bits) for HMAC-SHA256.")
+        .Validate(
+          o => !string.IsNullOrWhiteSpace(o.AdminEmail),
+          "Auth:AdminEmail is required. Set the DOCVAULT_ADMIN_EMAIL environment variable.")
+        .Validate(
+          o => !string.IsNullOrWhiteSpace(o.AdminPassword),
+          "Auth:AdminPassword is required. Set the DOCVAULT_ADMIN_PASSWORD environment variable.")
+        .Validate(
+          o => string.IsNullOrWhiteSpace(o.AdminPassword) || o.AdminPassword.Length >= 8,
+          "Auth:AdminPassword must be at least 8 characters.")
+        .ValidateOnStart();
+    }
 
     // ── Database connection string ────────────────────────────────────────────
     // In Development the app intentionally falls back to an in-memory database so
