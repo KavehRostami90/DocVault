@@ -47,11 +47,13 @@ public sealed class IndexingWorkerTests
         Mock<IWorkQueue<IndexingWorkItem>> Queue,
         Mock<IIngestionPipeline> Pipeline,
         Mock<IImportJobRepository> JobRepo,
-        Mock<IDocumentRepository> DocRepo)
+        Mock<IDocumentRepository> DocRepo,
+        Mock<IFailedIndexingJobRepository> DlqRepo)
     BuildWorker(Action<Mock<IImportJobRepository>>? configureJobRepo = null,
                 Action<Mock<IDocumentRepository>>? configureDocRepo  = null,
                 int maxDegreeOfParallelism = 4,
-                int drainTimeoutSeconds    = 5)
+                int drainTimeoutSeconds    = 5,
+                int maxRetryAttempts       = 3)
     {
         var queue    = new Mock<IWorkQueue<IndexingWorkItem>>();
         var pipeline = new Mock<IIngestionPipeline>();
@@ -65,7 +67,7 @@ public sealed class IndexingWorkerTests
         configureJobRepo?.Invoke(jobRepo);
         configureDocRepo?.Invoke(docRepo);
 
-        // ServiceProvider that resolves the two repos + chunk repo + unit of work
+        // ServiceProvider that resolves repos + chunk repo + unit of work + DLQ repo
         var chunkRepo = new Mock<IDocumentChunkRepository>();
         chunkRepo.Setup(r => r.ReplaceAsync(It.IsAny<DocumentId>(),
                                             It.IsAny<IReadOnlyList<DocumentChunk>>(),
@@ -76,11 +78,17 @@ public sealed class IndexingWorkerTests
         unitOfWork.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()))
                   .Returns(Task.CompletedTask);
 
+        var dlqRepo = new Mock<IFailedIndexingJobRepository>();
+        // Default: job has no existing DLQ entry (first failure)
+        dlqRepo.Setup(r => r.GetByJobIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync((FailedIndexingJob?)null);
+
         var services = new ServiceCollection();
         services.AddSingleton(jobRepo.Object);
         services.AddSingleton(docRepo.Object);
         services.AddSingleton(chunkRepo.Object);
         services.AddSingleton(unitOfWork.Object);
+        services.AddSingleton(dlqRepo.Object);
         var sp = services.BuildServiceProvider();
 
         var scopeFactory = new Mock<IServiceScopeFactory>();
@@ -91,19 +99,20 @@ public sealed class IndexingWorkerTests
             return scope.Object;
         });
 
-    var worker = new DocVault.Application.Background.IndexingWorker(
+        var worker = new DocVault.Application.Background.IndexingWorker(
             queue.Object,
             pipeline.Object,
             scopeFactory.Object,
             new Mock<IDomainEventDispatcher>().Object,
             Options.Create(new IndexingWorkerOptions
             {
-              MaxDegreeOfParallelism = maxDegreeOfParallelism,
-              DrainTimeoutSeconds    = drainTimeoutSeconds,
+                MaxDegreeOfParallelism = maxDegreeOfParallelism,
+                DrainTimeoutSeconds    = drainTimeoutSeconds,
+                MaxRetryAttempts       = maxRetryAttempts,
             }),
             NullLogger<DocVault.Application.Background.IndexingWorker>.Instance);
 
-        return (worker, queue, pipeline, jobRepo, docRepo);
+        return (worker, queue, pipeline, jobRepo, docRepo, dlqRepo);
     }
 
     /// <summary>
@@ -140,7 +149,7 @@ public sealed class IndexingWorkerTests
         var job        = MakeJob(documentId);
         var workItem   = new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType);
 
-        var (worker, queue, pipeline, jobRepo, docRepo) = BuildWorker(
+        var (worker, queue, pipeline, jobRepo, docRepo, _) = BuildWorker(
             jobRepo => jobRepo.Setup(r => r.GetAsync(job.Id, It.IsAny<CancellationToken>()))
                               .ReturnsAsync(job),
             docRepo => docRepo.Setup(r => r.GetAsync(documentId, It.IsAny<CancellationToken>()))
@@ -185,7 +194,7 @@ public sealed class IndexingWorkerTests
         var job        = MakeJob(documentId);
         var workItem   = new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType);
 
-        var (worker, queue, pipeline, jobRepo, docRepo) = BuildWorker(
+        var (worker, queue, pipeline, jobRepo, docRepo, _) = BuildWorker(
             jobRepo => jobRepo.Setup(r => r.GetAsync(job.Id, It.IsAny<CancellationToken>()))
                               .ReturnsAsync(job),
             docRepo => docRepo.Setup(r => r.GetAsync(documentId, It.IsAny<CancellationToken>()))
@@ -228,15 +237,17 @@ public sealed class IndexingWorkerTests
         var job        = MakeJob(documentId);
         var workItem   = new IndexingWorkItem(job.Id, job.StoragePath, job.ContentType);
 
-        var (worker, queue, pipeline, jobRepo, docRepo) = BuildWorker(
+        // maxRetryAttempts: 1 — first failure exhausts retries immediately so the document
+        // is marked Failed right away (no DLQ back-off needed for this assertion).
+        var (worker, queue, pipeline, jobRepo, docRepo, _) = BuildWorker(
             jobRepo => jobRepo.Setup(r => r.GetAsync(job.Id, It.IsAny<CancellationToken>()))
                               .ReturnsAsync(job),
             docRepo => docRepo.Setup(r => r.GetAsync(documentId, It.IsAny<CancellationToken>()))
-                              .ReturnsAsync(document));
+                              .ReturnsAsync(document),
+            maxRetryAttempts: 1);
 
         pipeline.Setup(p => p.RunAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("extraction failed"));
-
 
         // Signal when we know failure handling is done (doc UpdateAsync is called)
         var failureDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -269,7 +280,7 @@ public sealed class IndexingWorkerTests
         var unknownJobId = Guid.NewGuid();
         var workItem = new IndexingWorkItem(unknownJobId, "/x", "text/plain");
 
-        var (worker, queue, pipeline, jobRepo, _) = BuildWorker(
+        var (worker, queue, pipeline, jobRepo, _, _) = BuildWorker(
             jobRepo => jobRepo.Setup(r => r.GetAsync(unknownJobId, It.IsAny<CancellationToken>()))
                               .ReturnsAsync((ImportJob?)null));
 
@@ -311,7 +322,7 @@ public sealed class IndexingWorkerTests
         var job1   = MakeJob(docId1, Guid.NewGuid());
         var job2   = MakeJob(docId2, Guid.NewGuid());
 
-        var (worker, queue, _, jobRepo, _) = BuildWorker(
+        var (worker, queue, _, jobRepo, _, _) = BuildWorker(
             jobRepo => jobRepo.Setup(r => r.GetInProgressAsync(It.IsAny<CancellationToken>()))
                               .ReturnsAsync(new[] { job1, job2 }));
 
@@ -340,7 +351,7 @@ public sealed class IndexingWorkerTests
     [Fact]
     public async Task Startup_NoPendingJobs_EnqueuesNothing()
     {
-        var (worker, queue, _, _, _) = BuildWorker(); // default: empty pending list
+        var (worker, queue, _, _, _, _) = BuildWorker(); // default: empty pending list
 
         using var cts = new CancellationTokenSource();
         queue.Setup(q => q.DequeueAsync(It.IsAny<CancellationToken>()))
@@ -374,7 +385,7 @@ public sealed class IndexingWorkerTests
         var inFlightCount = 0;
         var bothInFlight  = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var (worker, queue, pipeline, _, docRepo) = BuildWorker(
+        var (worker, queue, pipeline, _, docRepo, _) = BuildWorker(
             maxDegreeOfParallelism: 2,
             configureJobRepo: jobRepo =>
             {
@@ -446,7 +457,7 @@ public sealed class IndexingWorkerTests
 
         // Use a very short drain timeout (2 s) to keep the test fast, but the pipeline
         // completes quickly so the job should still finish successfully.
-        var (worker, queue, pipeline, jobRepo, docRepo) = BuildWorker(
+        var (worker, queue, pipeline, jobRepo, docRepo, _) = BuildWorker(
             drainTimeoutSeconds: 2,
             configureJobRepo: r => r.Setup(x => x.GetAsync(job.Id, It.IsAny<CancellationToken>()))
                                     .ReturnsAsync(job),
@@ -493,7 +504,7 @@ public sealed class IndexingWorkerTests
 
         // Drain timeout of 1 s; pipeline blocks until its token is cancelled (simulating
         // a slow embedding API that never responds within the drain window).
-        var (worker, queue, pipeline, jobRepo, _) = BuildWorker(
+        var (worker, queue, pipeline, jobRepo, _, _) = BuildWorker(
             drainTimeoutSeconds: 1,
             configureJobRepo: r => r.Setup(x => x.GetAsync(job.Id, It.IsAny<CancellationToken>()))
                                     .ReturnsAsync(job));
