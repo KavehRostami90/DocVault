@@ -35,10 +35,12 @@ public sealed class LocalFileStorage : IFileStorage
     return Task.CompletedTask;
   }
 
-  public Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default)
+  public Task<IReadOnlyList<BlobInfo>> ListAsync(CancellationToken cancellationToken = default)
   {
-    IReadOnlyList<string> files = Directory.Exists(_root)
-      ? Directory.GetFiles(_root).Select(f => Path.GetFileName(f)!).ToList()
+    IReadOnlyList<BlobInfo> files = Directory.Exists(_root)
+      ? Directory.GetFiles(_root)
+          .Select(f => new BlobInfo(Path.GetFileName(f)!, new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero)))
+          .ToList()
       : [];
     return Task.FromResult(files);
   }

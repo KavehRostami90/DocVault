@@ -57,4 +57,7 @@ public class EfImportJobRepository : IImportJobRepository
       .Where(j => j.DocumentId == documentId)
       .OrderByDescending(j => j.StartedAt)
       .FirstOrDefaultAsync(cancellationToken);
+
+  public async Task<IReadOnlyList<string>> GetAllStoragePathsAsync(CancellationToken cancellationToken = default)
+    => await _db.ImportJobs.Select(j => j.StoragePath).Distinct().ToListAsync(cancellationToken);
 }

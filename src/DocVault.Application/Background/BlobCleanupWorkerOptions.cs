@@ -12,4 +12,10 @@ public sealed class BlobCleanupWorkerOptions
 
   /// <summary>Maximum delivery attempts before an entry is abandoned. Default: 10.</summary>
   public int MaxRetryAttempts { get; set; } = 10;
+
+  /// <summary>
+  /// Blobs written within this many minutes of the reconciliation scan are skipped to avoid
+  /// racing with in-flight uploads whose DB transaction has not yet committed. Default: 60 minutes.
+  /// </summary>
+  public int ReconciliationGraceMinutes { get; set; } = 60;
 }

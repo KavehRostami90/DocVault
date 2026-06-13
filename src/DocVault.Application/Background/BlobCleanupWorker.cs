@@ -95,7 +95,18 @@ public sealed partial class BlobCleanupWorker : BackgroundService
   {
     LogReconciliationStarted(_logger);
 
-    var blobs = await _storage.ListAsync(ct);
+    var allBlobs = await _storage.ListAsync(ct);
+    if (allBlobs.Count == 0)
+    {
+      LogReconciliationComplete(_logger, 0);
+      return;
+    }
+
+    // Skip blobs written within the grace window — they may belong to an upload whose
+    // DB transaction has not yet committed, so they would look like orphans even though
+    // they are valid. The next reconciliation cycle will re-evaluate them.
+    var cutoff = DateTimeOffset.UtcNow.AddMinutes(-_options.ReconciliationGraceMinutes);
+    var blobs  = allBlobs.Where(b => b.LastModified <= cutoff).ToList();
     if (blobs.Count == 0)
     {
       LogReconciliationComplete(_logger, 0);
@@ -104,13 +115,21 @@ public sealed partial class BlobCleanupWorker : BackgroundService
 
     using var scope     = _scopeFactory.CreateScope();
     var docRepo         = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+    var importJobRepo   = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
     var pendingRepo     = scope.ServiceProvider.GetRequiredService<IPendingBlobDeletionRepository>();
     var unitOfWork      = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-    var knownIds = await docRepo.GetAllIdsAsync(ct);
-    var knownPaths = knownIds.Select(id => $"{id}.bin").ToHashSet(StringComparer.OrdinalIgnoreCase);
+    // Build the set of all storage paths that are still referenced by DB records.
+    // ImportJob.StoragePath is the authoritative file reference served to callers;
+    // including it prevents reconciliation from deleting a re-imported file whose
+    // path differs from the conventional {documentId}.bin pattern.
+    var knownIds   = await docRepo.GetAllIdsAsync(ct);
+    var jobPaths   = await importJobRepo.GetAllStoragePathsAsync(ct);
+    var knownPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var id in knownIds)   knownPaths.Add($"{id}.bin");
+    foreach (var path in jobPaths) knownPaths.Add(path);
 
-    var orphaned = blobs.Where(b => !knownPaths.Contains(b)).ToList();
+    var orphaned = blobs.Where(b => !knownPaths.Contains(b.Name)).ToList();
     if (orphaned.Count == 0)
     {
       LogReconciliationComplete(_logger, 0);
@@ -122,24 +141,24 @@ public sealed partial class BlobCleanupWorker : BackgroundService
     int deleted = 0;
     int enqueued = 0;
 
-    foreach (var path in orphaned)
+    foreach (var blob in orphaned)
     {
       if (ct.IsCancellationRequested) break;
 
       try
       {
-        await _storage.DeleteAsync(path, ct);
+        await _storage.DeleteAsync(blob.Name, ct);
         deleted++;
-        LogOrphanDeleted(_logger, path);
+        LogOrphanDeleted(_logger, blob.Name);
       }
       catch (Exception ex)
       {
         // Couldn't delete right now — queue it for retry if not already queued
         try
         {
-          if (!await pendingRepo.ExistsByPathAsync(path, ct))
+          if (!await pendingRepo.ExistsByPathAsync(blob.Name, ct))
           {
-            var entry = new PendingBlobDeletion(Guid.NewGuid(), path);
+            var entry = new PendingBlobDeletion(Guid.NewGuid(), blob.Name);
             await pendingRepo.AddAsync(entry, ct);
             await unitOfWork.SaveChangesAsync(ct);
             enqueued++;
@@ -147,10 +166,10 @@ public sealed partial class BlobCleanupWorker : BackgroundService
         }
         catch (Exception queueEx)
         {
-          LogEnqueueFailed(_logger, path, queueEx);
+          LogEnqueueFailed(_logger, blob.Name, queueEx);
         }
 
-        LogOrphanDeleteFailed(_logger, path, ex);
+        LogOrphanDeleteFailed(_logger, blob.Name, ex);
       }
     }
 
