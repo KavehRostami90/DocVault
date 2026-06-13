@@ -143,6 +143,7 @@ public sealed partial class IndexingWorker : BackgroundService
     using var scope = _scopeFactory.CreateScope();
     var importJobRepository = scope.ServiceProvider.GetRequiredService<IImportJobRepository>();
     var documentRepository  = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+    var dlqRepository       = scope.ServiceProvider.GetRequiredService<IFailedIndexingJobRepository>();
     var unitOfWork          = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
     var job = await importJobRepository.GetAsync(item.JobId, ct);
@@ -195,6 +196,11 @@ public sealed partial class IndexingWorker : BackgroundService
         await documentRepository.UpdateAsync(document, ct);
       }
 
+      // Remove from DLQ if this was a successful retry
+      var dlqEntry = await dlqRepository.GetByJobIdAsync(item.JobId, ct);
+      if (dlqEntry is not null)
+        await dlqRepository.DeleteAsync(dlqEntry, ct);
+
       await unitOfWork.SaveChangesAsync(ct);
 
       if (document is not null)
@@ -208,45 +214,81 @@ public sealed partial class IndexingWorker : BackgroundService
     catch (Exception ex) when (!ct.IsCancellationRequested)
     {
       LogFailed(_logger, item.JobId, ex);
-      await MarkFailedAsync(job, item.JobId, ex.Message, importJobRepository, documentRepository, unitOfWork, ct);
+      await MoveToDeadLetterAsync(job, item, ex.Message, importJobRepository, documentRepository, dlqRepository, unitOfWork, ct);
     }
   }
 
   private Task<IngestionResult> RunPipelineAsync(IndexingWorkItem item, CancellationToken ct)
     => _pipeline.RunAsync(item.StoragePath, item.ContentType, ct);
 
-  private async Task MarkFailedAsync(
+  private async Task MoveToDeadLetterAsync(
     ImportJob job,
-    Guid jobId,
+    IndexingWorkItem item,
     string errorMessage,
     IImportJobRepository importJobRepository,
     IDocumentRepository documentRepository,
+    IFailedIndexingJobRepository dlqRepository,
     IUnitOfWork unitOfWork,
     CancellationToken ct)
   {
     try
     {
+      var dlqEntry    = await dlqRepository.GetByJobIdAsync(job.Id, ct);
+      var attemptsDone = (dlqEntry?.AttemptCount ?? 0) + 1;
+      var isExhausted  = attemptsDone >= _options.MaxRetryAttempts;
+
+      // Exponential backoff: base × 5^(attempt-1) → 5 min, 25 min, 2h 5min …
+      DateTimeOffset? nextRetryAt = isExhausted
+        ? null
+        : DateTimeOffset.UtcNow + TimeSpan.FromMinutes(
+            _options.RetryBaseDelayMinutes * Math.Pow(5, dlqEntry?.AttemptCount ?? 0));
+
+      if (dlqEntry is null)
+      {
+        dlqEntry = new FailedIndexingJob(
+          job.Id, item.StoragePath, item.ContentType,
+          _options.MaxRetryAttempts, errorMessage, nextRetryAt);
+        await dlqRepository.AddAsync(dlqEntry, ct);
+      }
+      else
+      {
+        dlqEntry.RecordFailure(errorMessage, nextRetryAt);
+        await dlqRepository.UpdateAsync(dlqEntry, ct);
+      }
+
+      // Always mark ImportJob as Failed — DLQ worker resets it before re-enqueueing.
       job.MarkFailed(errorMessage);
       await importJobRepository.UpdateAsync(job, ct);
 
-      var document = await documentRepository.GetAsync(job.DocumentId, ct);
-      if (document is not null)
+      if (isExhausted)
       {
-        document.MarkFailed(errorMessage);
-        await documentRepository.UpdateAsync(document, ct);
+        // Only propagate failure to the document when all retries are exhausted.
+        var document = await documentRepository.GetAsync(job.DocumentId, ct);
+        if (document is not null)
+        {
+          document.MarkFailed(errorMessage);
+          await documentRepository.UpdateAsync(document, ct);
+        }
+
+        await unitOfWork.SaveChangesAsync(ct);
+
+        if (document is not null)
+        {
+          await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);
+          document.ClearDomainEvents();
+        }
+
+        LogExhausted(_logger, job.Id, attemptsDone);
       }
-
-      await unitOfWork.SaveChangesAsync(ct);
-
-      if (document is not null)
+      else
       {
-        await _eventDispatcher.DispatchAsync(document.DomainEvents, ct);
-        document.ClearDomainEvents();
+        await unitOfWork.SaveChangesAsync(ct);
+        LogScheduledRetry(_logger, job.Id, nextRetryAt!.Value, attemptsDone, _options.MaxRetryAttempts);
       }
     }
     catch (Exception updateEx)
     {
-      LogStatusUpdateFailed(_logger, jobId, updateEx);
+      LogStatusUpdateFailed(_logger, job.Id, updateEx);
     }
   }
 
@@ -286,4 +328,12 @@ public sealed partial class IndexingWorker : BackgroundService
   [LoggerMessage(9, LogLevel.Warning,
     "IndexingWorker drain timed out after {DrainTimeoutSeconds}s — {Count} job(s) did not finish and will be recovered on next startup.")]
   private static partial void LogDrainTimedOut(ILogger logger, int count, int drainTimeoutSeconds);
+
+  [LoggerMessage(10, LogLevel.Warning,
+    "Indexing job {JobId} moved to dead-letter queue (attempt {Attempt}/{Max}). Next retry at {NextRetryAt}.")]
+  private static partial void LogScheduledRetry(ILogger logger, Guid jobId, DateTimeOffset nextRetryAt, int attempt, int max);
+
+  [LoggerMessage(11, LogLevel.Error,
+    "Indexing job {JobId} exhausted all {AttemptCount} retry attempts. Document marked as Failed.")]
+  private static partial void LogExhausted(ILogger logger, Guid jobId, int attemptCount);
 }

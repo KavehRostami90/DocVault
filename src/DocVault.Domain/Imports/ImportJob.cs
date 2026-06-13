@@ -54,5 +54,12 @@ public class ImportJob : AggregateRoot<Guid>
     Error       = error;
     CompletedAt = DateTime.UtcNow;
   }
+
+  /// <summary>Resets the job so it can be re-processed by the dead-letter retry worker.</summary>
+  public void MarkPendingRetry()
+  {
+    Status = ImportStatus.Pending;
+    Error  = null;
+  }
 }
 

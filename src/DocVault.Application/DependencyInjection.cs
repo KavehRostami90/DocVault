@@ -2,6 +2,7 @@ using DocVault.Application.Background;
 using DocVault.Application.Pipeline;
 using DocVault.Application.Pipeline.Stages;
 using DocVault.Application.UseCases.Admin;
+using DocVault.Application.UseCases.Admin.DeadLetterQueue;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Application.UseCases.Documents.GetDocument;
 using DocVault.Application.UseCases.Documents.GetDocumentFile;
@@ -36,6 +37,9 @@ public static class DependencyInjection
     services.AddScoped<GetAdminStatsHandler>();
     services.AddScoped<ReindexDocumentHandler>();
     services.AddScoped<ListUsersHandler>();
+    services.AddScoped<GetDeadLetterQueueHandler>();
+    services.AddScoped<RetryDeadLetterJobHandler>();
+    services.AddScoped<DiscardDeadLetterJobHandler>();
 
     services.AddSingleton<FileReadStage>();
     services.AddSingleton<TextExtractStage>();
@@ -47,6 +51,7 @@ public static class DependencyInjection
     services.Configure<IndexingWorkerOptions>(configuration.GetSection(IndexingWorkerOptions.SectionName));
 
     services.AddHostedService<IndexingWorker>();
+    services.AddHostedService<DeadLetterRetryWorker>();
 
     return services;
   }

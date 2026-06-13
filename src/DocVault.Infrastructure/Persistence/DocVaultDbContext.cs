@@ -17,6 +17,7 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
   public DbSet<DocumentChunk> DocumentChunks => Set<DocumentChunk>();
   public DbSet<Tag> Tags => Set<Tag>();
   public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
+  public DbSet<FailedIndexingJob> FailedIndexingJobs => Set<FailedIndexingJob>();
   public DbSet<IndexingQueueEntry> IndexingQueue => Set<IndexingQueueEntry>();
   public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
