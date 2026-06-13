@@ -14,6 +14,7 @@ using DocVault.Application.UseCases.ApiKeys.ListApiKeys;
 using DocVault.Application.UseCases.ApiKeys.RevokeApiKey;
 using DocVault.Infrastructure.Health;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Threading.RateLimiting;

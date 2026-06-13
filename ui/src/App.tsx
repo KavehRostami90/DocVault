@@ -11,6 +11,7 @@ import DocumentDetailPage from './pages/DocumentDetailPage'
 import SearchPage from './pages/SearchPage'
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import ProfilePage from './pages/ProfilePage'
+import ApiKeysPage from './pages/ApiKeysPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
@@ -40,6 +41,7 @@ export default function App() {
               <Route path="documents/:id" element={<DocumentDetailPage />} />
               <Route path="search" element={<SearchPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="api-keys" element={<ApiKeysPage />} />
 
               <Route
                 path="admin"

@@ -22,8 +22,8 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
   public DbSet<FailedIndexingJob> FailedIndexingJobs => Set<FailedIndexingJob>();
   public DbSet<IndexingQueueEntry> IndexingQueue => Set<IndexingQueueEntry>();
   public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
-  public DbSet<PendingBlobDeletion> PendingBlobDeletions => Set<PendingBlobDeletion>();
   public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+  public DbSet<PendingBlobDeletion> PendingBlobDeletions => Set<PendingBlobDeletion>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {
