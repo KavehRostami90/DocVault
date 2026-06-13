@@ -35,6 +35,14 @@ public sealed class LocalFileStorage : IFileStorage
     return Task.CompletedTask;
   }
 
+  public Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default)
+  {
+    IReadOnlyList<string> files = Directory.Exists(_root)
+      ? Directory.GetFiles(_root).Select(f => Path.GetFileName(f)!).ToList()
+      : [];
+    return Task.FromResult(files);
+  }
+
   /// <summary>Opens the file at <paramref name="path"/> for reading.</summary>
   /// <param name="path">Relative file path within the storage root.</param>
   /// <param name="cancellationToken">Cancellation token (unused for synchronous file open).</param>

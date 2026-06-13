@@ -25,6 +25,14 @@ public sealed class AzureBlobFileStorage : IFileStorage
     await blob.DeleteIfExistsAsync(cancellationToken: cancellationToken);
   }
 
+  public async Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default)
+  {
+    var names = new List<string>();
+    await foreach (var item in _container.GetBlobsAsync(cancellationToken: cancellationToken))
+      names.Add(item.Name);
+    return names;
+  }
+
   public async Task<Stream> ReadAsync(string path, CancellationToken cancellationToken = default)
   {
     var blob = _container.GetBlobClient(path);

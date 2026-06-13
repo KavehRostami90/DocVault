@@ -49,6 +49,7 @@ public static class DependencyInjection
     services.AddSingleton<IIngestionPipeline, IngestionPipeline>();
 
     services.Configure<IndexingWorkerOptions>(configuration.GetSection(IndexingWorkerOptions.SectionName));
+    services.Configure<BlobCleanupWorkerOptions>(configuration.GetSection(BlobCleanupWorkerOptions.SectionName));
 
     services.AddHostedService<IndexingWorker>();
     services.AddHostedService<DeadLetterRetryWorker>();

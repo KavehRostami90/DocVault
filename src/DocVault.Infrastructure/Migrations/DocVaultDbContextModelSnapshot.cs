@@ -398,6 +398,39 @@ namespace DocVault.Infrastructure.Migrations
                     b.ToTable("IndexingQueue");
                 });
 
+            modelBuilder.Entity("DocVault.Domain.Storage.PendingBlobDeletion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttemptCount");
+
+                    b.HasIndex("StoragePath")
+                        .IsUnique();
+
+                    b.ToTable("PendingBlobDeletions");
+                });
+
             modelBuilder.Entity("DocumentTag", b =>
                 {
                     b.Property<Guid>("DocumentId")

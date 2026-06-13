@@ -5,4 +5,7 @@ public interface IFileStorage
   Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default);
   Task<Stream> ReadAsync(string path, CancellationToken cancellationToken = default);
   Task DeleteAsync(string path, CancellationToken cancellationToken = default);
+
+  /// <summary>Returns all blob paths currently held in storage.</summary>
+  Task<IReadOnlyList<string>> ListAsync(CancellationToken cancellationToken = default);
 }

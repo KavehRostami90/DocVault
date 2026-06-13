@@ -4,6 +4,7 @@ using DocVault.Application.Common.Results;
 using DocVault.Application.UseCases.Documents.DeleteDocument;
 using DocVault.Domain.Documents;
 using DocVault.Domain.Documents.ValueObjects;
+using DocVault.Domain.Storage;
 using Moq;
 using Xunit;
 
@@ -26,19 +27,20 @@ public sealed class DeleteDocumentHandlerTests
         return doc;
     }
 
-       private static (DeleteDocumentHandler Handler, Mock<IDocumentRepository> Repo, Mock<IFileStorage> Storage)
+    private static (DeleteDocumentHandler Handler, Mock<IDocumentRepository> Repo, Mock<IFileStorage> Storage, Mock<IPendingBlobDeletionRepository> Pending)
     BuildHandler(Document? toReturn = null)
     {
-    var uiw = new Mock<IUnitOfWork>();
+        var uiw     = new Mock<IUnitOfWork>();
         var repo    = new Mock<IDocumentRepository>();
         var storage = new Mock<IFileStorage>();
-        var handler = new DeleteDocumentHandler(repo.Object, storage.Object, uiw.Object);
+        var pending = new Mock<IPendingBlobDeletionRepository>();
+        var handler = new DeleteDocumentHandler(repo.Object, storage.Object, uiw.Object, pending.Object);
 
         repo.Setup(r => r.GetAsync(It.IsAny<DocumentId>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((DocumentId id, CancellationToken _) =>
                 toReturn is not null && id == toReturn.Id ? toReturn : null);
 
-        return (handler, repo, storage);
+        return (handler, repo, storage, pending);
     }
 
     // -------------------------------------------------------------------------
@@ -48,7 +50,7 @@ public sealed class DeleteDocumentHandlerTests
     [Fact]
     public async Task HandleAsync_DocumentNotFound_ReturnsFailure()
     {
-        var (handler, _, storage) = BuildHandler(toReturn: null);
+        var (handler, _, storage, _) = BuildHandler(toReturn: null);
         var command = new DeleteDocumentCommand(DocumentId.New(), Guid.NewGuid());
 
         var result = await handler.HandleAsync(command);
@@ -67,7 +69,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         var ownerId = Guid.NewGuid();
         var doc     = MakeDocument(ownerId: ownerId);
-        var (handler, _, storage) = BuildHandler(toReturn: doc);
+        var (handler, _, storage, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: Guid.NewGuid(), IsAdmin: false);
 
@@ -83,7 +85,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         var ownerId = Guid.NewGuid();
         var doc     = MakeDocument(ownerId: ownerId);
-        var (handler, repo, _) = BuildHandler(toReturn: doc);
+        var (handler, repo, _, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: ownerId, IsAdmin: false);
 
@@ -98,7 +100,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         var ownerId = Guid.NewGuid();
         var doc     = MakeDocument(ownerId: ownerId);
-        var (handler, _, storage) = BuildHandler(toReturn: doc);
+        var (handler, _, storage, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: ownerId, IsAdmin: false);
 
@@ -111,7 +113,7 @@ public sealed class DeleteDocumentHandlerTests
     public async Task HandleAsync_AdminCanDeleteAnyDocument()
     {
         var doc = MakeDocument(ownerId: Guid.NewGuid());
-        var (handler, repo, _) = BuildHandler(toReturn: doc);
+        var (handler, repo, _, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: Guid.NewGuid(), IsAdmin: true);
 
@@ -125,7 +127,7 @@ public sealed class DeleteDocumentHandlerTests
     public async Task HandleAsync_AdminDelete_DeletesStorageFile()
     {
         var doc = MakeDocument(ownerId: Guid.NewGuid());
-        var (handler, _, storage) = BuildHandler(toReturn: doc);
+        var (handler, _, storage, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: Guid.NewGuid(), IsAdmin: true);
 
@@ -143,7 +145,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         var ownerId = Guid.NewGuid();
         var doc = new Document(DocumentId.New(), "T", "f.txt", "text/plain", 100, new FileHash("h"), ownerId);
-        var (handler, _, storage) = BuildHandler(toReturn: doc);
+        var (handler, _, storage, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: ownerId, IsAdmin: false);
 
@@ -166,7 +168,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         var ownerId = Guid.NewGuid();
         var doc     = MakeDocument(status, ownerId);
-        var (handler, repo, _) = BuildHandler(toReturn: doc);
+        var (handler, repo, _, _) = BuildHandler(toReturn: doc);
 
         var command = new DeleteDocumentCommand(doc.Id, CallerId: ownerId, IsAdmin: false);
 
@@ -177,7 +179,7 @@ public sealed class DeleteDocumentHandlerTests
     }
 
     // -------------------------------------------------------------------------
-    // Best-effort storage cleanup
+    // Best-effort storage cleanup + pending deletion queue
     // -------------------------------------------------------------------------
 
     [Fact]
@@ -185,7 +187,7 @@ public sealed class DeleteDocumentHandlerTests
     {
         var ownerId = Guid.NewGuid();
         var doc     = MakeDocument(ownerId: ownerId);
-        var (handler, _, storage) = BuildHandler(toReturn: doc);
+        var (handler, _, storage, _) = BuildHandler(toReturn: doc);
 
         storage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                .ThrowsAsync(new IOException("disk full"));
@@ -195,5 +197,44 @@ public sealed class DeleteDocumentHandlerTests
         var result = await handler.HandleAsync(command);
 
         Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task HandleAsync_StorageDeleteThrows_EnqueuesPendingDeletion()
+    {
+        var ownerId = Guid.NewGuid();
+        var doc     = MakeDocument(ownerId: ownerId);
+        var (handler, _, storage, pending) = BuildHandler(toReturn: doc);
+
+        storage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .ThrowsAsync(new IOException("disk full"));
+        pending.Setup(p => p.ExistsByPathAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(false);
+
+        var command = new DeleteDocumentCommand(doc.Id, CallerId: ownerId, IsAdmin: false);
+        await handler.HandleAsync(command);
+
+        pending.Verify(
+            p => p.AddAsync(It.Is<PendingBlobDeletion>(e => e.StoragePath == $"{doc.Id.Value}.bin"),
+                            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task HandleAsync_StorageDeleteThrows_SkipsEnqueueWhenAlreadyQueued()
+    {
+        var ownerId = Guid.NewGuid();
+        var doc     = MakeDocument(ownerId: ownerId);
+        var (handler, _, storage, pending) = BuildHandler(toReturn: doc);
+
+        storage.Setup(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .ThrowsAsync(new IOException("disk full"));
+        pending.Setup(p => p.ExistsByPathAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+               .ReturnsAsync(true);
+
+        var command = new DeleteDocumentCommand(doc.Id, CallerId: ownerId, IsAdmin: false);
+        await handler.HandleAsync(command);
+
+        pending.Verify(p => p.AddAsync(It.IsAny<PendingBlobDeletion>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

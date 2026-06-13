@@ -97,4 +97,7 @@ internal class EfDocumentRepository : IDocumentRepository
 
     return result is null ? (0L, 0L) : (result.UsedBytes, result.Count);
   }
+
+  public async Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken cancellationToken = default)
+    => await _db.Documents.Select(d => d.Id.Value).ToListAsync(cancellationToken);
 }
