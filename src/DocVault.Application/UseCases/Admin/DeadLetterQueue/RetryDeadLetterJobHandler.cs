@@ -57,12 +57,16 @@ public sealed class RetryDeadLetterJobHandler : ICommandHandler<RetryDeadLetterJ
 
     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-    // MarkRetrying clears NextRetryAt so the polling worker doesn't double-pick it
+    // Enqueue before persisting MarkRetrying. If the process dies after the save
+    // above but before the enqueue, NextRetryAt is still set and the polling worker
+    // will re-pick the entry — far better than stranding it with NextRetryAt = null
+    // and no queue item, which GetDueForRetryAsync would never return.
+    _queue.Enqueue(new IndexingWorkItem(job.Id, entry.StoragePath, entry.ContentType));
+
+    // Clear NextRetryAt so the polling worker doesn't double-pick while in-flight.
     entry.MarkRetrying();
     await _dlqRepo.UpdateAsync(entry, cancellationToken);
     await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-    _queue.Enqueue(new IndexingWorkItem(job.Id, entry.StoragePath, entry.ContentType));
 
     return Result.Success();
   }
