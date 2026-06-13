@@ -1,5 +1,5 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { FileText, Search, Menu, X, Shield, LogOut } from 'lucide-react'
+import { FileText, Search, Menu, X, Shield, LogOut, Key } from 'lucide-react'
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { initClient } from '../api/client'
@@ -19,6 +19,7 @@ export default function Layout() {
   const navLinks = [
     { to: '/documents', icon: FileText, label: 'Documents' },
     { to: '/search', icon: Search, label: 'Search' },
+    { to: '/api-keys', icon: Key, label: 'API Keys' },
     ...(user?.role === 'Admin' ? [{ to: '/admin', icon: Shield, label: 'Admin' }] : []),
   ]
 

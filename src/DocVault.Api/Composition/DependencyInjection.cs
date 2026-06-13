@@ -9,8 +9,12 @@ using DocVault.Application.Abstractions.Auth;
 using DocVault.Application.Background;
 using DocVault.Infrastructure;
 using DocVault.Infrastructure.Auth;
+using DocVault.Application.UseCases.ApiKeys.CreateApiKey;
+using DocVault.Application.UseCases.ApiKeys.ListApiKeys;
+using DocVault.Application.UseCases.ApiKeys.RevokeApiKey;
 using DocVault.Infrastructure.Health;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Threading.RateLimiting;
@@ -103,30 +107,49 @@ public static class DependencyInjection
       options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     });
 
-    // JWT Bearer authentication
+    // Authentication — JWT Bearer + API Key schemes.
+    // A policy scheme inspects each request and forwards to the right handler:
+    // if X-Api-Key is present → ApiKey scheme, otherwise → JWT Bearer.
+    const string defaultScheme = "SmartDefault";
     var authSettings = configuration.GetSection(AuthSettings.Section).Get<AuthSettings>() ?? new AuthSettings();
+
     if (authSettings.IsConfigured)
     {
-      services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddJwtBearer(options =>
+      services.AddAuthentication(options =>
+      {
+        options.DefaultScheme          = defaultScheme;
+        options.DefaultChallengeScheme = defaultScheme;
+      })
+      .AddPolicyScheme(defaultScheme, defaultScheme, opts =>
+      {
+        opts.ForwardDefaultSelector = ctx =>
+          ctx.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.HeaderName)
+            ? ApiKeyAuthenticationHandler.SchemeName
+            : JwtBearerDefaults.AuthenticationScheme;
+      })
+      .AddJwtBearer(options =>
+      {
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-          options.TokenValidationParameters = new TokenValidationParameters
-          {
-            ValidateIssuer = true,
-            ValidIssuer = authSettings.JwtIssuer,
-            ValidateAudience = true,
-            ValidAudience = authSettings.JwtAudience,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authSettings.JwtSigningKey)),
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(30),
-          };
-          options.MapInboundClaims = false;
-        });
+          ValidateIssuer           = true,
+          ValidIssuer              = authSettings.JwtIssuer,
+          ValidateAudience         = true,
+          ValidAudience            = authSettings.JwtAudience,
+          ValidateIssuerSigningKey = true,
+          IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(authSettings.JwtSigningKey)),
+          ValidateLifetime         = true,
+          ClockSkew                = TimeSpan.FromSeconds(30),
+        };
+        options.MapInboundClaims = false;
+      })
+      .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.SchemeName, _ => { });
     }
     else
     {
-      services.AddAuthentication();
+      services.AddAuthentication()
+        .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+          ApiKeyAuthenticationHandler.SchemeName, _ => { });
     }
 
     services.AddAuthorization(options =>
@@ -134,6 +157,10 @@ public static class DependencyInjection
       options.AddPolicy(AuthPolicies.RequireAdmin, p => p.RequireRole(AppRoles.Admin));
       options.AddPolicy(AuthPolicies.RequireUser,  p => p.RequireRole(AppRoles.Admin, AppRoles.User, AppRoles.Guest));
     });
+
+    services.AddScoped<CreateApiKeyHandler>();
+    services.AddScoped<ListApiKeysHandler>();
+    services.AddScoped<RevokeApiKeyHandler>();
 
     // Current user context — resolves from the JWT claims in the active request
     services.AddHttpContextAccessor();

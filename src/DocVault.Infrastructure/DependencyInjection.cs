@@ -112,6 +112,7 @@ public static class DependencyInjection
     services.AddScoped<IPendingBlobDeletionRepository, EfPendingBlobDeletionRepository>();
     services.AddScoped<IUnitOfWork, EfUnitOfWork>();
     services.AddScoped<IUserQueryService, EfUserQueryService>();
+    services.AddScoped<IApiKeyRepository, EfApiKeyRepository>();
 
     var azureBlobConnStr = configuration.GetConnectionString("AzureBlob");
     var azureBlobContainer = configuration["Storage:ContainerName"] ?? "docvault";
