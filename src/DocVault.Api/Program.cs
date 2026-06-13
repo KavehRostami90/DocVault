@@ -87,6 +87,7 @@ try
   v1.MapQaEndpoints();
   v1.MapTagsEndpoints();
   v1.MapImportsEndpoints();
+  v1.MapApiKeyEndpoints();
   v1.MapAdminEndpoints();
   app.MapHealthEndpoints();
 
