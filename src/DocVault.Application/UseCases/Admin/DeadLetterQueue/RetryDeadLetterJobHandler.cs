@@ -3,6 +3,7 @@ using DocVault.Application.Abstractions.Persistence;
 using DocVault.Application.Background;
 using DocVault.Application.Background.Queue;
 using DocVault.Application.Common.Results;
+using DocVault.Domain.Documents;
 
 namespace DocVault.Application.UseCases.Admin.DeadLetterQueue;
 
@@ -10,17 +11,20 @@ public sealed class RetryDeadLetterJobHandler : ICommandHandler<RetryDeadLetterJ
 {
   private readonly IFailedIndexingJobRepository _dlqRepo;
   private readonly IImportJobRepository         _importJobRepo;
+  private readonly IDocumentRepository          _documentRepo;
   private readonly IUnitOfWork                  _unitOfWork;
   private readonly IWorkQueue<IndexingWorkItem>  _queue;
 
   public RetryDeadLetterJobHandler(
     IFailedIndexingJobRepository dlqRepo,
     IImportJobRepository importJobRepo,
+    IDocumentRepository documentRepo,
     IUnitOfWork unitOfWork,
     IWorkQueue<IndexingWorkItem> queue)
   {
     _dlqRepo       = dlqRepo;
     _importJobRepo = importJobRepo;
+    _documentRepo  = documentRepo;
     _unitOfWork    = unitOfWork;
     _queue         = queue;
   }
@@ -40,6 +44,17 @@ public sealed class RetryDeadLetterJobHandler : ICommandHandler<RetryDeadLetterJ
 
     await _dlqRepo.UpdateAsync(entry, cancellationToken);
     await _importJobRepo.UpdateAsync(job, cancellationToken);
+
+    // If the document was marked Failed (exhausted DLQ entry), reset it to Imported
+    // so the indexing worker can call MarkIndexed() after a successful run.
+    // PrepareForReindex() is a no-op when the document is already Imported.
+    var document = await _documentRepo.GetAsync(job.DocumentId, cancellationToken);
+    if (document is not null && document.Status == DocumentStatus.Failed)
+    {
+      document.PrepareForReindex();
+      await _documentRepo.UpdateAsync(document, cancellationToken);
+    }
+
     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
     // MarkRetrying clears NextRetryAt so the polling worker doesn't double-pick it
