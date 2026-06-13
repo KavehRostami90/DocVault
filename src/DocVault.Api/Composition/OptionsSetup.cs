@@ -59,6 +59,11 @@ public static class OptionsSetup
           o => !string.IsNullOrWhiteSpace(o.ConnectionString),
           "ConnectionStrings:Database is required outside of Development. " +
           "Set the DOCVAULT_DB_* environment variables (see .env.example).")
+        .Validate(
+          o => string.IsNullOrWhiteSpace(o.ConnectionString) || IsConnectionStringComplete(o.ConnectionString),
+          "ConnectionStrings:Database is incomplete or contains placeholder values. " +
+          "Ensure Host, Database, Username, and Password are all set to real values via " +
+          "the DOCVAULT_DB_* environment variables (see .env.example).")
         .ValidateOnStart();
     }
 
@@ -69,5 +74,41 @@ public static class OptionsSetup
   private sealed class DatabaseConnectionGuard
   {
     public string? ConnectionString { get; set; }
+  }
+
+  /// <summary>
+  /// Returns false when any of Host, Database, Username/User Id, or Password is absent,
+  /// empty, or set to the "REPLACE_ME" placeholder shipped in appsettings.Production.json.
+  /// Docker Compose always produces a non-empty string even when env vars are unset
+  /// (e.g. "Password="), so a simple non-whitespace check is insufficient.
+  /// </summary>
+  private static bool IsConnectionStringComplete(string connectionString)
+  {
+    var values = connectionString
+      .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+      .Select(part => part.Split('=', 2, StringSplitOptions.TrimEntries))
+      .Where(kv => kv.Length == 2)
+      .ToDictionary(kv => kv[0], kv => kv[1], StringComparer.OrdinalIgnoreCase);
+
+    string? Pick(params string[] keys)
+    {
+      foreach (var k in keys)
+        if (values.TryGetValue(k, out var v)) return v;
+      return null;
+    }
+
+    var host     = Pick("Host", "Server");
+    var database = Pick("Database", "Db");
+    var username = Pick("Username", "User Id", "User");
+    var password = Pick("Password");
+
+    return !IsEmptyOrPlaceholder(host)
+        && !IsEmptyOrPlaceholder(database)
+        && !IsEmptyOrPlaceholder(username)
+        && !IsEmptyOrPlaceholder(password);
+
+    static bool IsEmptyOrPlaceholder(string? v)
+      => string.IsNullOrWhiteSpace(v)
+      || v.Equals("REPLACE_ME", StringComparison.OrdinalIgnoreCase);
   }
 }
