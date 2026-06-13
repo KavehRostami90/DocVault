@@ -109,6 +109,7 @@ public static class DependencyInjection
     services.AddScoped<ITagRepository, EfTagRepository>();
     services.AddScoped<IImportJobRepository, EfImportJobRepository>();
     services.AddScoped<IFailedIndexingJobRepository, EfFailedIndexingJobRepository>();
+    services.AddScoped<IPendingBlobDeletionRepository, EfPendingBlobDeletionRepository>();
     services.AddScoped<IUnitOfWork, EfUnitOfWork>();
     services.AddScoped<IUserQueryService, EfUserQueryService>();
 

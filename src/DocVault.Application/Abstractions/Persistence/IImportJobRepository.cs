@@ -28,4 +28,10 @@ public interface IImportJobRepository
   /// or <c>null</c> if no job exists for that document.
   /// </summary>
   Task<ImportJob?> GetLatestByDocumentIdAsync(DocumentId documentId, CancellationToken cancellationToken = default);
+
+  /// <summary>
+  /// Returns every distinct <see cref="ImportJob.StoragePath"/> recorded in the database.
+  /// Used by the reconciliation scan to avoid treating live import-job blobs as orphans.
+  /// </summary>
+  Task<IReadOnlyList<string>> GetAllStoragePathsAsync(CancellationToken cancellationToken = default);
 }

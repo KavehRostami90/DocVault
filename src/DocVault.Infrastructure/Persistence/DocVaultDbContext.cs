@@ -1,5 +1,6 @@
 using DocVault.Domain.Documents;
 using DocVault.Domain.Imports;
+using DocVault.Domain.Storage;
 using DocVault.Infrastructure.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -20,6 +21,7 @@ public class DocVaultDbContext : IdentityDbContext<ApplicationUser, IdentityRole
   public DbSet<FailedIndexingJob> FailedIndexingJobs => Set<FailedIndexingJob>();
   public DbSet<IndexingQueueEntry> IndexingQueue => Set<IndexingQueueEntry>();
   public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+  public DbSet<PendingBlobDeletion> PendingBlobDeletions => Set<PendingBlobDeletion>();
 
   protected override void OnModelCreating(ModelBuilder modelBuilder)
   {

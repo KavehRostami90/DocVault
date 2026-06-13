@@ -41,4 +41,10 @@ public interface IDocumentRepository
   /// Returns the total storage in bytes and document count for the given owner.
   /// </summary>
   Task<(long UsedBytes, long DocumentCount)> GetStorageUsedBytesAsync(Guid ownerId, CancellationToken cancellationToken = default);
+
+  /// <summary>
+  /// Returns all document IDs currently in the store.
+  /// Used by the blob cleanup worker to find blobs that have no matching document.
+  /// </summary>
+  Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken cancellationToken = default);
 }
