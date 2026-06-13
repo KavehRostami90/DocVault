@@ -184,8 +184,14 @@ public static class DependencyInjection
         sp.GetRequiredService<IOptions<EmbeddingCacheOptions>>(),
         sp.GetRequiredService<ILogger<CachingEmbeddingProvider>>()));
 
-      services.AddHttpClient<IQuestionAnsweringService, OpenAiQuestionAnsweringService>()
+      services.AddHttpClient<OpenAiQuestionAnsweringService>()
         .AddStandardResilienceHandler(o => ApplyResilience(o, resilience.Qa));
+
+      services.AddSingleton<IQuestionAnsweringService>(sp =>
+        new ResilientQuestionAnsweringService(
+          sp.GetRequiredService<OpenAiQuestionAnsweringService>(),
+          new FallbackQuestionAnsweringService(),
+          sp.GetRequiredService<ILogger<ResilientQuestionAnsweringService>>()));
     }
     else
     {

@@ -53,16 +53,7 @@ public sealed partial class AskQuestionHandler : IQueryHandler<AskQuestionQuery,
         AnsweredByModel: false));
     }
 
-    QaAnswerResult answer;
-    try
-    {
-      answer = await _qa.AnswerAsync(query.Question, contexts, cancellationToken);
-    }
-    catch (Exception ex)
-    {
-      LogQaServiceError(_logger, ex);
-      return Result<AskQuestionResult>.Failure("QA service unavailable. Please try again later.");
-    }
+    var answer = await _qa.AnswerAsync(query.Question, contexts, cancellationToken);
 
     var citations = contexts
       .Select(c => new AskQuestionCitation(c.DocumentId, c.DocumentTitle, c.Text[..Math.Min(180, c.Text.Length)], c.RetrievalScore))
@@ -136,7 +127,4 @@ public sealed partial class AskQuestionHandler : IQueryHandler<AskQuestionQuery,
       .ToList();
   }
 
-  [LoggerMessage(Level = LogLevel.Error,
-    Message = "QA service threw an unexpected exception.")]
-  static partial void LogQaServiceError(ILogger logger, Exception ex);
 }
