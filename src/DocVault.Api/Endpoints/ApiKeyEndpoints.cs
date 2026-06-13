@@ -38,8 +38,20 @@ public static class ApiKeyEndpoints
       CancellationToken ct) =>
     {
       if (caller.UserId is null) return Results.Unauthorized();
+
+      // Guests are limited to 24-hour sessions; cap their API keys to the same
+      // lifetime so a key cannot outlive the session that created it.
+      DateTimeOffset? expiresAt = request.ExpiresAt;
+      if (caller.IsGuest)
+      {
+        var guestCeiling = DateTimeOffset.UtcNow.AddHours(24);
+        expiresAt = expiresAt.HasValue && expiresAt.Value < guestCeiling
+          ? expiresAt.Value
+          : guestCeiling;
+      }
+
       var result = await handler.HandleAsync(
-        new CreateApiKeyCommand(caller.UserId.ToString()!, request.Name, request.ExpiresAt), ct);
+        new CreateApiKeyCommand(caller.UserId.ToString()!, request.Name, expiresAt), ct);
 
       return result.IsSuccess
         ? Results.Created($"/api/v1/api-keys/{result.Value!.Id}", result.Value)

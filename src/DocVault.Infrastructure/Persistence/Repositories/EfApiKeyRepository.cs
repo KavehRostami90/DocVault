@@ -27,7 +27,12 @@ public sealed class EfApiKeyRepository : IApiKeyRepository
 
   public Task UpdateAsync(ApiKey key, CancellationToken ct = default)
   {
-    _db.ApiKeys.Update(key);
+    // Do NOT call _db.ApiKeys.Update(key) here. Update() marks every column as Modified
+    // regardless of what actually changed. Both callers (RevokeApiKeyHandler and
+    // ApiKeyAuthenticationHandler) always load the entity from this same DbContext, so
+    // the entity is already tracked. EF's change tracker records only the mutated columns
+    // (IsRevoked or LastUsedAt), preventing a concurrent RecordUse() from writing a stale
+    // IsRevoked = false back over a Revoke() that committed after the key was read.
     return Task.CompletedTask;
   }
 
