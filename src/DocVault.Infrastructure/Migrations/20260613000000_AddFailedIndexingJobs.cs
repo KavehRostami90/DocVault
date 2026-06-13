@@ -25,7 +25,9 @@ namespace DocVault.Infrastructure.Migrations
                     FirstFailedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     LastFailedAt  = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     NextRetryAt   = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    IsExhausted   = table.Column<bool>(type: "boolean", nullable: false)
+                    IsExhausted   = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt     = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt     = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
                 },
                 constraints: table =>
                 {
