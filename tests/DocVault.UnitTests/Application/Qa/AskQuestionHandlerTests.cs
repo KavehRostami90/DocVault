@@ -265,12 +265,15 @@ public sealed class AskQuestionHandlerTests
     }
 
     // -------------------------------------------------------------------------
-    // Provider exception handling
+    // Fallback / degraded-mode handling
     // -------------------------------------------------------------------------
 
     [Fact]
-    public async Task HandleAsync_WhenQaServiceThrows_ReturnsFailure()
+    public async Task HandleAsync_WhenQaServiceReturnsFallback_ReturnsSuccessWithFallbackContent()
     {
+        // Resilience is the decorator's responsibility. From the handler's perspective,
+        // IQuestionAnsweringService always returns a result — when the LLM is unavailable,
+        // ResilientQuestionAnsweringService returns AnsweredByModel: false instead of throwing.
         var (handler, docRepo, qaService) = BuildHandler();
 
         var doc = MakeIndexedDocument(DocumentId.New(), "Doc", "Some indexed text content for testing purposes.");
@@ -284,37 +287,14 @@ public sealed class AskQuestionHandlerTests
             .Setup(q => q.AnswerAsync(
                 It.IsAny<string>(), It.IsAny<IReadOnlyList<QaContextChunk>>(),
                 It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Connection refused http://internal-service:5000"));
+            .ReturnsAsync(new QaAnswerResult("Possible answer from 'Doc': Some indexed text...", AnsweredByModel: false));
 
         var result = await handler.HandleAsync(new AskQuestionQuery("What is this?"));
 
-        Assert.False(result.IsSuccess);
-        Assert.NotNull(result.Error);
-    }
-
-    [Fact]
-    public async Task HandleAsync_WhenQaServiceThrows_ErrorMessageDoesNotLeakInternalDetails()
-    {
-        var (handler, docRepo, qaService) = BuildHandler();
-
-        var doc = MakeIndexedDocument(DocumentId.New(), "Doc", "Some indexed text content for testing purposes.");
-
-        docRepo.Setup(r => r.SearchAsync(
-                It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
-                It.IsAny<Guid?>(), It.IsAny<float[]?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeSearchPage((doc, 0.9)));
-
-        qaService
-            .Setup(q => q.AnswerAsync(
-                It.IsAny<string>(), It.IsAny<IReadOnlyList<QaContextChunk>>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new HttpRequestException("Connection refused http://internal-service:5000"));
-
-        var result = await handler.HandleAsync(new AskQuestionQuery("What is this?"));
-
-        // The error surfaced to the caller must not contain raw exception details or internal URLs.
-        Assert.DoesNotContain("http://internal-service:5000", result.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Connection refused", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Value);
+        Assert.False(result.Value.AnsweredByModel);
+        Assert.NotEmpty(result.Value.Answer);
     }
 
     // -------------------------------------------------------------------------
