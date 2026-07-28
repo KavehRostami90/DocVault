@@ -12,6 +12,7 @@ on:
 jobs:
   close_pull_request_job:
     runs-on: ubuntu-latest
+    permissions: {}
     name: Close Pull Request Job
     steps:
       - name: Close Pull Request
