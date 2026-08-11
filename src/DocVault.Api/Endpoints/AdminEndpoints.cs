@@ -272,8 +272,12 @@ public static class AdminEndpoints
       var addResult = await users.AddToRolesAsync(user, request.Roles);
 
       if (addResult.Succeeded)
+      {
+        var sanitizedRoles = string.Join(", ", request.Roles.Select(r =>
+          (r ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty)));
         logger.LogInformation("Admin {CallerId} set roles [{Roles}] on user {UserId}",
-          caller.UserId, string.Join(", ", request.Roles), id);
+          caller.UserId, sanitizedRoles, id);
+      }
 
       return addResult.Succeeded ? Results.NoContent() : Results.Problem(
         detail: string.Join("; ", addResult.Errors.Select(e => e.Description)),
