@@ -59,8 +59,10 @@ public sealed class ClamAvScanner : IVirusScanner
         var responseBuffer = new byte[256];
         var responseLen    = await socket.ReadAsync(responseBuffer, cts.Token);
         var response       = Encoding.UTF8.GetString(responseBuffer, 0, responseLen).TrimEnd('\0', '\n');
+        var safeResponse   = response.Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
 
-        _logger.LogDebug("ClamAV response: {Response}", response);
+        _logger.LogDebug("ClamAV response: {Response}", safeResponse);
 
         if (response.EndsWith("OK", StringComparison.Ordinal))
             return new VirusScanResult(IsClean: true);
@@ -70,7 +72,9 @@ public sealed class ClamAvScanner : IVirusScanner
             var threat = response
                 .Replace("stream: ", "", StringComparison.Ordinal)
                 .Replace(" FOUND", "", StringComparison.Ordinal);
-            _logger.LogWarning("ClamAV detected threat: {Threat}", threat);
+            var safeThreat = threat.Replace("\r", "\\r", StringComparison.Ordinal)
+                .Replace("\n", "\\n", StringComparison.Ordinal);
+            _logger.LogWarning("ClamAV detected threat: {Threat}", safeThreat);
             return new VirusScanResult(IsClean: false, ThreatName: threat);
         }
 
