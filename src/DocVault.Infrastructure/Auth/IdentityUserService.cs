@@ -60,7 +60,7 @@ public sealed class IdentityUserService : IUserService
     }
     catch (Exception ex)
     {
-      _logger.LogWarning(ex, "Failed to send confirmation email to {Email}; user can request a resend.", user.Email);
+      _logger.LogWarning(ex, "Failed to send confirmation email to {Email}; user can request a resend.", SanitizeForLog(user.Email));
     }
 
     return Result<UserProfile>.Success(await BuildProfileAsync(user));
@@ -217,4 +217,12 @@ public sealed class IdentityUserService : IUserService
 
   private static string JoinErrors(IdentityResult result)
     => string.Join("; ", result.Errors.Select(e => e.Description));
+  private static string SanitizeForLog(string? value)
+  {
+    if (string.IsNullOrEmpty(value))
+      return string.Empty;
+
+    return value.Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+  }
 }
