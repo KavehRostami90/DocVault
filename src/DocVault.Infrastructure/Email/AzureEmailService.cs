@@ -80,7 +80,7 @@ internal sealed class AzureEmailService : IEmailService
     EmailSendOperation operation = await _client.SendAsync(WaitUntil.Started, message, ct);
 
     _logger.LogInformation(
-      "ACS email submitted — to={Email} subject={Subject} operationId={OperationId}",
-      toEmail, subject, operation.Id);
+      "ACS email submitted — subject={Subject} operationId={OperationId}",
+      subject, operation.Id);
   }
 }
