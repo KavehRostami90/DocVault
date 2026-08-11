@@ -23,7 +23,10 @@ public static class ValidationFilter
                 .GroupBy(e => e.PropertyName)
                 .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
               var logger = invocationContext.HttpContext.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("Validation");
-              logger?.LogWarning("Validation failed for {Path}: {Errors}", invocationContext.HttpContext.Request.Path, errors);
+              var safePath = invocationContext.HttpContext.Request.Path.ToString()
+                .Replace("\r", string.Empty)
+                .Replace("\n", string.Empty);
+              logger?.LogWarning("Validation failed for {Path}: {Errors}", safePath, errors);
               return Results.ValidationProblem(errors, statusCode: StatusCodes.Status400BadRequest);
             }
           }
